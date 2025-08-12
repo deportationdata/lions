@@ -35,7 +35,7 @@ jobs:
       - name: Process data
         run: |
           mkdir -p outputs
-          Rscript scripts/run_lions.R
+          Rscript scripts/read_lions.R
 
       - uses: ncipollo/release-action@v1
         with:
