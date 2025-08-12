@@ -7,8 +7,10 @@ permissions:
   contents: write
 
 jobs:
-  runs-on: large-runner
-  steps:
+  run-and-release:
+    runs-on: large-runner
+
+    steps:
       - uses: actions/checkout@v4
 
       - uses: r-lib/actions/setup-r@v2
