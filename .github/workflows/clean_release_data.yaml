@@ -1,0 +1,54 @@
+name: Download and release latest LIONS data 
+
+on:
+  push:
+
+permissions:
+  contents: write
+
+jobs:
+  run-and-release:
+    runs-on: large-runner
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+
+      - uses: r-lib/actions/setup-renv@v2
+
+      - name: Download data
+        run: |
+          mkdir -p inputs
+          Rscript scripts/download_lions.R  
+
+      - name: Unzip data
+        run: |
+          mkdir -p inputs/unzipped
+          shopt -s nullglob
+          for z in inputs/*.zip; do
+            echo "Unzipping $z"
+            unzip -jo "$z" -d inputs/unzipped
+          done
+          rm -f inputs/*.zip
+
+      - name: Show directory structure
+        run: |
+          echo "Directory structure:"
+          ls -R .
+
+      - name: Process data
+        run: |
+          mkdir -p outputs
+          Rscript scripts/run_lions.R
+
+      - uses: ncipollo/release-action@v1
+        with:
+          tag: lions-latest-${{ github.sha }}
+          name: "LIONS latest release ${{ github.sha }}"
+          artifacts: |
+            outputs/*.feather
+            outputs/*.rds
+          generateReleaseNotes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
