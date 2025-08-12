@@ -8,8 +8,7 @@ permissions:
 
 jobs:
   runs-on: large-runner
-
-    steps:
+  steps:
       - uses: actions/checkout@v4
 
       - uses: r-lib/actions/setup-r@v2
