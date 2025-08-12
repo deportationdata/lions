@@ -31,11 +31,6 @@ jobs:
           done
           rm -f inputs/*.zip
 
-      - name: Show directory structure
-        run: |
-          echo "Directory structure:"
-          ls -R .
-
       - name: Process data
         run: |
           mkdir -p outputs
