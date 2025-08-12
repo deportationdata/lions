@@ -5,6 +5,11 @@ library(lubridate)  # dates (make_date)
 library(xml2)       # low-level HTML/XML + url_absolute()
 library(purrr)     # For pluck
 library(dplyr)
+library(fs)        # For dir_create 
+
+# Set up
+
+UA <- "Mozilla/5.0 (compatible; R scraper; +https://example.org/)" # User-Agent to identify the scraper
 
 ## Identify the link of the latest release (Latest month)
 
@@ -13,7 +18,7 @@ get_latest_lions_month <- function(
 ) {
   # Fetch & parse html (with user-agent)
   
-  resp <- httr::GET(index_url, httr::user_agent("R (rvest/httr)")) # Sends GET request with user-agent to reduce the chances of getting blocked 
+  resp <- httr::GET(index_url, httr::add_headers(`User-Agent` = UA)) # Sends GET request with user-agent to reduce the chances of getting blocked 
   httr::stop_for_status(resp) # Check if the request was successful, otherwise stop with an error
   html <- read_html(httr::content(resp, as = "text", encoding = "UTF-8")) # Reads the HTTP body as text, then parses it into an HTML document.
   
@@ -50,23 +55,11 @@ get_latest_lions_month <- function(
   )
 }
 
-# Usage
-lions_links <- get_latest_lions_month()
-
-## Get all the zip links from the latest month 
-
-# Bringing the url of the latest month
-index_url <- lions_links |>
-  purrr::pluck("latest") |> # Getting the elements in "latest"
-  dplyr::pull(url) # Pulling the url
-
 # Function to get links to download disks
-get_disk_links <- function(
-      index_url = index_url
-  ) {
-    # Fetch & parse html (with user-agent)
-    
-    resp <- httr::GET(index_url, httr::user_agent("R (rvest/httr)")) # Sends GET request with user-agent to reduce the chances of getting blocked 
+get_disk_links <- function(month_url) {
+  # Fetch & parse html (with user-agent)
+    resp <- httr::GET(month_url, httr::add_headers(`User-Agent` = UA))
+
     httr::stop_for_status(resp) # Check if the request was successful, otherwise stop with an error
     html <- read_html(httr::content(resp, as = "text", encoding = "UTF-8")) # Reads the HTTP body as text, then parses it into an HTML document.
     
@@ -78,7 +71,7 @@ get_disk_links <- function(
       href = html_attr(a_nodes, "href") # href: the raw link target
     ) |> 
       filter(!is.na(href), text != "") |>  # Filters out empty/NA links
-      mutate(url = xml2::url_absolute(href, index_url)) # url converts each href to an absolute URL using the page’s base URL
+      mutate(url = xml2::url_absolute(href, month_url)) # url converts each href to an absolute URL using the page’s base URL
     
     # Keep only "DISK*" items 
   
@@ -92,18 +85,15 @@ get_disk_links <- function(
       pull(url)
 }
 
-## Download from DISK urls
-url <- "https://media.justice.gov/video/usao/data/June_Current_FY/DISK27.ZIP"
-UA <- "Mozilla/5.0 (compatible; R scraper; +https://example.org/)"
-output <- "~/Dropbox/DDP/Tests/"
+## Function to download from DISK urls
 
-download_with_retry <- function(url, output, tries = 3) {
+download_with_retry <- function(url, path, tries = 3) {
   for (i in seq_len(tries)) {
     r <- try(
       httr::GET(
         url,
         httr::add_headers(`User-Agent` = UA),
-        httr::write_disk(output, overwrite = TRUE)
+        httr::write_disk(path, overwrite = TRUE)
       ),
       silent = TRUE
     )
@@ -115,28 +105,25 @@ download_with_retry <- function(url, output, tries = 3) {
 }
 
 # ------------------------------
-# 4) Main
+# Running all functions
 # ------------------------------
 main <- function() {
   fs::dir_create("inputs")
-  
-  latest_url <- get_latest_lions_month() |>
+
+  latest_url <- get_latest_lions_month() |> # Run our first function to get the latest month
     purrr::pluck("latest") |>
     dplyr::pull(url)
-  
-  message("Latest month page: ", latest_url)
-  
-  zip_urls <- get_disk_links(latest_url)
-  if (length(zip_urls) == 0) stop("No DISK zip links found at: ", latest_url)
-  
-  readr::write_lines(zip_urls, "inputs/lions_links.txt")
-  message("Found ", length(zip_urls), " zip(s). List written to inputs/lions_links.txt")
-  
+  message("Latest month page: ", latest_url) # Show the latest month
+
+  zip_urls <- get_disk_links(latest_url) # Run our second function to get the DISK links
+  zip_urls <- head(zip_urls, 1) # TEST LINE - only one link
+  if (length(zip_urls) == 0) stop("No DISK zip links found at: ", latest_url) # Error message in case there are no disk links
+
   dests <- file.path("inputs", basename(zip_urls))
   
-  walk2(zip_urls, dests, \(u, p) {
-    message("→ Downloading ", basename(p))
-    download_with_retry(u, p)
+  walk2(zip_urls, dests, \(url, path) {
+    message("→ Downloading ", basename(path))
+    download_with_retry(url, path)
   })
   
   message("All downloads completed into ./inputs")
