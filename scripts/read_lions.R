@@ -10,11 +10,6 @@ library(tibble)
 library(fs) # To suppress messages
 library(tools)  # for file_path_sans_ext()
 
-# Output directory
-
-setwd("~/Dropbox/deportationdata")
-
-
 parse_table_chunk <- function(chunk, disk) { # Each disk folder (currently 28) has a README.txt file and other gs_*.txt files (27 is an exception***)
   header <- chunk[1]
   table <- str_extract(header, "^GS_[A-Z0-9_]+")
