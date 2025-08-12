@@ -17,7 +17,7 @@ get_latest_lions_month <- function(
   httr::stop_for_status(resp) # Check if the request was successful, otherwise stop with an error
   html <- read_html(httr::content(resp, as = "text", encoding = "UTF-8")) # Reads the HTTP body as text, then parses it into an HTML document.
   
-  # Collect links + text (build tibble from vectors, not from ".")
+  # Collect links + text 
   
   a_nodes <- html_elements(html, "a") # Selects all <a> nodes (links) from the HTML document
   links <- tibble( # Builds a tibble from the anchor
@@ -70,7 +70,7 @@ get_disk_links <- function(
     httr::stop_for_status(resp) # Check if the request was successful, otherwise stop with an error
     html <- read_html(httr::content(resp, as = "text", encoding = "UTF-8")) # Reads the HTTP body as text, then parses it into an HTML document.
     
-    # Collect links + text (build tibble from vectors, not from ".")
+    # Collect links + text 
     
     a_nodes <- html_elements(html, "a") # Selects all <a> nodes (links) from the HTML document
     links <- tibble( # Builds a tibble from the anchor
@@ -86,6 +86,63 @@ get_disk_links <- function(
       filter(
         str_detect(text, regex("Disk", ignore_case = TRUE)) & # Filter for links that contain "Disk"
         str_detect(text, regex("zip", ignore_case = TRUE)) # and the text "zip"
-      ) 
-   
+      ) |> 
+      transmute(url) |>
+      distinct(url) |>
+      pull(url)
+}
+
+## Download from DISK urls
+url <- "https://media.justice.gov/video/usao/data/June_Current_FY/DISK27.ZIP"
+UA <- "Mozilla/5.0 (compatible; R scraper; +https://example.org/)"
+output <- "~/Dropbox/DDP/Tests/"
+
+download_with_retry <- function(url, output, tries = 3) {
+  for (i in seq_len(tries)) {
+    r <- try(
+      httr::GET(
+        url,
+        httr::add_headers(`User-Agent` = UA),
+        httr::write_disk(output, overwrite = TRUE)
+      ),
+      silent = TRUE
+    )
+    ok <- !inherits(r, "try-error") && identical(httr::status_code(r), 200L) # Must have HTTP status 200
+    if (ok) return(invisible(TRUE))
+    Sys.sleep(i) # simple backoff - if the download failed, wait a bit before retrying. The wait grows with i (1s, 2s, 3s).
   }
+  stop("Failed to download after retries: ", url)
+}
+
+# ------------------------------
+# 4) Main
+# ------------------------------
+main <- function() {
+  fs::dir_create("inputs")
+  
+  latest_url <- get_latest_lions_month() |>
+    purrr::pluck("latest") |>
+    dplyr::pull(url)
+  
+  message("Latest month page: ", latest_url)
+  
+  zip_urls <- get_disk_links(latest_url)
+  if (length(zip_urls) == 0) stop("No DISK zip links found at: ", latest_url)
+  
+  readr::write_lines(zip_urls, "inputs/lions_links.txt")
+  message("Found ", length(zip_urls), " zip(s). List written to inputs/lions_links.txt")
+  
+  dests <- file.path("inputs", basename(zip_urls))
+  
+  walk2(zip_urls, dests, \(u, p) {
+    message("→ Downloading ", basename(p))
+    download_with_retry(u, p)
+  })
+  
+  message("All downloads completed into ./inputs")
+}
+
+# Run if called via Rscript
+if (identical(environmentName(environment()), "R_GlobalEnv")) {
+  main()
+}
