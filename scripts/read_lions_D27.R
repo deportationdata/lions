@@ -10,12 +10,8 @@ library(fs)
 library(tibble)
 library(tidylog)
 
-# Output directory
-
-setwd("~/Dropbox/deportationdata")
-
 # Path to DISK27
-disk27_path <- "~/Dropbox/deportationdata/data/EOUSA/LIONS/DISK27"
+disk27_path <- "inputs/DISK27"
 
 # Find all .log files
 disk27_files <- list.files(disk27_path, pattern = "\\.log$", full.names = TRUE)
@@ -60,7 +56,7 @@ layout_disk27 <- map_dfr(disk27_files, function(file_path) {
 
 # Group into file-specific specs
 layout_by_file <- layout_disk27 |> 
-  group_by(file_path = file.path("data/EOUSA/LIONS", disk, file)) |> 
+  group_by(file_path = file.path("inputs", disk, file)) |> 
   summarise(
     fwf = list(fwf_positions(begin, end, col_names)),
     .groups = "drop"
@@ -70,11 +66,9 @@ layout_by_file <- layout_disk27 |>
 layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 
 # Directory to save intermediate feather files
-output_dir <-  "_processing/intermediate/EOUSA/library/lions_data"
+output_dir <-  "outputs"
 dir_create(output_dir)
 
-
-#test_layout_tbl <- head(layout_tbl, 2) # For testing purposes, take only the first 5 entries
 
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
 
