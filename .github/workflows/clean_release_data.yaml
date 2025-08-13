@@ -38,8 +38,8 @@ jobs:
         run: |
           mkdir -p outputs
           Rscript scripts/read_lions.R
-          Rscript scripts/read_lions_D27.R
-          Rscript scripts/read_lions_D28.R
+          # Rscript scripts/read_lions_D27.R
+          # Rscript scripts/read_lions_D28.R
 
       - uses: ncipollo/release-action@v1
         with:
