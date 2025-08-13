@@ -76,7 +76,7 @@ derive_table <- \(f) {
 # read in all of the README files in any DISC** folder
 readmes <-
   dir(
-    "data/EOUSA",
+    "inputs",
     pattern = "README\\.txt$",
     recursive = TRUE, # looks in subdirectories too
     full.names = TRUE # full file paths instead of just filenames
@@ -115,7 +115,7 @@ layouts_lookup <-
 
 # Create a list of file paths for each disk and file
 layout_by_file <- layouts_data |>
-  group_by(file_path = file.path("data/EOUSA/LIONS", disk, file)) |>
+  group_by(file_path = file.path("inputs", disk, file)) |>
   summarise(
     fwf = list(fwf_positions(begin, end, col_names)),
     .groups = "drop"
@@ -127,10 +127,7 @@ layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 
 # Creating directory to save feather files
 
-output_dir <- "_processing/intermediate/EOUSA/library/lions_data"
-dir_create(output_dir)
-
-#test_layout_tbl <- head(layout_tbl,400) # For testing purposes, take only the first 5 entries
+fs::dir_create("outputs")
 
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
 
