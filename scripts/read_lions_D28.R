@@ -1,5 +1,4 @@
-## Disk28 - This script reads the DISK28 files, which are formatted differently than the other disks.
-
+## Disk28 - This script reads the DISK28 files, which are formatted differently than the other disks
 #  Read me from this Disk does not include positions but the formatting of the .txt is clearer, so we'll read them by detecting the layout automatically from dashes
 
 library(tidyverse)
@@ -14,19 +13,9 @@ library(tibble)
 library(fs) # To suppress messages
 library(tools)  # for file_path_sans_ext()
 
-# Output directory
-
-setwd("~/Dropbox/deportationdata")
 
 # Path to DISK28 directory
-disk28_path <- "~/Dropbox/deportationdata/data/EOUSA/LIONS/DISK28"
-
-# List all .txt files in DISK28
-disk28_files <- list.files(disk28_path, pattern = "\\.txt$", full.names = TRUE)
-
-# Set working directory and path to DISK28 files
-setwd("~/Dropbox/deportationdata")
-disk28_path <- "~/Dropbox/deportationdata/data/EOUSA/LIONS/DISK28"
+disk28_path <- "inputs/DISK28"
 disk28_files <- list.files(disk28_path, pattern = "\\.txt$", full.names = TRUE)
 
 # Function: Detect fwf layout from full file lines
@@ -75,7 +64,7 @@ layout_disk28 <- layout_disk28 |>
 # Create a list of file paths for each disk and file
 layout_by_file <- 
   layout_disk28 |>
-  group_by(file_path = file.path("data/EOUSA/LIONS", disk, file)) |>
+  group_by(file_path = file.path("inputs", disk, file)) |>
   summarise(
     fwf = list(fwf_positions(begin, end, col_names)),
     .groups = "drop"
@@ -87,7 +76,7 @@ layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 
 # Creating directory to save feather files
 
-output_dir <- "_processing/intermediate/EOUSA/library/lions_data"
+output_dir <- "outputs"
 dir_create(output_dir, 
            recurse = TRUE)  # ensures it does not throw an error if the directory already exists
 
