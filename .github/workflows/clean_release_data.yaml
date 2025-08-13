@@ -25,12 +25,14 @@ jobs:
       - name: Unzip data
         run: |
           mkdir -p inputs/unzipped
-          shopt -s nullglob
-          for z in inputs/*.zip; do
+
+          for z in inputs/*.[Zz][Ii][Pp]; do
             echo "Unzipping $z"
-            unzip -jo "$z" -d inputs/unzipped
+            basename=$(basename "$z")
+            basename=${basename%.[Zz][Ii][Pp]}
+            mkdir -p "inputs/unzipped/$basename"
+            unzip -o "$z" -d "inputs/unzipped/$basename"
           done
-          rm -f inputs/*.zip
 
       - name: Process data
         run: |

@@ -107,29 +107,21 @@ download_with_retry <- function(url, path, tries = 3) {
 # ------------------------------
 # Running all functions
 # ------------------------------
-main <- function() {
-  fs::dir_create("inputs")
+fs::dir_create("inputs")
 
-  latest_url <- get_latest_lions_month() |> # Run our first function to get the latest month
-    purrr::pluck("latest") |>
-    dplyr::pull(url)
-  message("Latest month page: ", latest_url) # Show the latest month
+latest_url <- get_latest_lions_month() |> # Run our first function to get the latest month
+  purrr::pluck("latest") |>
+  dplyr::pull(url)
+message("Latest month page: ", latest_url) # Show the latest month
 
-  zip_urls <- get_disk_links(latest_url) # Run our second function to get the DISK links
-  zip_urls <- head(zip_urls, 1) # TEST LINE - only one link
-  if (length(zip_urls) == 0) stop("No DISK zip links found at: ", latest_url) # Error message in case there are no disk links
-
-  dests <- file.path("inputs", basename(zip_urls))
+zip_urls <- get_disk_links(latest_url) # Run our second function to get the DISK links
+zip_urls <- head(zip_urls, 1) # TEST LINE - only one link
   
-  walk2(zip_urls, dests, \(url, path) {
-    message("→ Downloading ", basename(path))
-    download_with_retry(url, path)
-  })
+dests <- file.path("inputs", basename(zip_urls))
   
-  message("All downloads completed into ./inputs")
-}
-
-# Run if called via Rscript
-if (identical(environmentName(environment()), "R_GlobalEnv")) {
-  main()
-}
+walk2(zip_urls, dests, \(url, path) {
+  message("→ Downloading ", basename(path))
+  download_with_retry(url, path)
+})
+  
+message("All downloads completed into ./inputs")

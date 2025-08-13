@@ -115,7 +115,7 @@ layouts_lookup <-
 
 # Create a list of file paths for each disk and file
 layout_by_file <- layouts_data |>
-  group_by(file_path = file.path("inputs", disk, file)) |>
+  group_by(file_path = file.path("inputs/unzipped", disk, file)) |>
   summarise(
     fwf = list(fwf_positions(begin, end, col_names)),
     .groups = "drop"
@@ -127,7 +127,9 @@ layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 
 # Creating directory to save feather files
 
-fs::dir_create("outputs")
+output_dir <- "outputs"
+
+fs::dir_create(output_dir)
 
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
 
