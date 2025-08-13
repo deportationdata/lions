@@ -43,8 +43,8 @@ jobs:
 
       - uses: ncipollo/release-action@v1
         with:
-          tag: lions-latest-${{ github.sha }}
-          name: "LIONS latest release ${{ github.sha }}"
+          tag: ${{ env.LATEST_MONTH_TAG }} # Tagging with month so it's possible to check 
+          name: "LIONS latest release ${{ env.LATEST_MONTH_NAME }}"
           artifacts: |
             outputs/*.feather
           generateReleaseNotes: true
