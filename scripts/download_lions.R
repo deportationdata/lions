@@ -158,7 +158,7 @@ if (!is.na(latest_release_tag) && identical(latest_release_tag, latest_tag)) {
 if (nzchar(ghout)) cat("SHOULD_RUN=true\n", file = ghout, append = TRUE)
 
 zip_urls <- get_disk_links(latest_url) # Run our second function to get the DISK links
-# zip_urls <- head(zip_urls, 1) # TEST LINE - only one link
+zip_urls <- head(zip_urls, 1) # TEST LINE - only one link
   
 dests <- file.path("inputs", basename(zip_urls))
   
