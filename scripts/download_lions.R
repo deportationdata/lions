@@ -115,7 +115,7 @@ latest_url <- get_latest_lions_month() |> # Run our first function to get the la
 message("Latest month page: ", latest_url) # Show the latest month
 
 zip_urls <- get_disk_links(latest_url) # Run our second function to get the DISK links
-zip_urls <- head(zip_urls, 1) # TEST LINE - only one link
+# zip_urls <- head(zip_urls, 1) # TEST LINE - only one link
   
 dests <- file.path("inputs", basename(zip_urls))
   
