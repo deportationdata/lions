@@ -15,7 +15,7 @@ library(tools)  # for file_path_sans_ext()
 
 
 # Path to DISK28 directory
-disk28_path <- "inputs/DISK28"
+disk28_path <- "inputs/unzipped/DISK28"
 disk28_files <- list.files(disk28_path, pattern = "\\.txt$", full.names = TRUE)
 
 # Function: Detect fwf layout from full file lines
