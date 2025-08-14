@@ -50,7 +50,7 @@ get_latest_lions_month <- function(
   
   list(
     all_months = data_links |> select(date_key, month_name, year, url, text),
-    latest     = data_links |> slice(1) |> select(date_key, month_name, year, url) # Gets the url of the most recent month's data files
+    latest     = data_links |> slice(1) |> select(date_key, month_name, year, month_num, url) # Gets the url of the most recent month's data files
   )
 }
 
