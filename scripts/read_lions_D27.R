@@ -11,7 +11,7 @@ library(tibble)
 library(tidylog)
 
 # Path to DISK27
-disk27_path <- "inputs/DISK27"
+disk27_path <- "inputs/unzipped/DISK27"
 
 # Find all .log files
 disk27_files <- list.files(disk27_path, pattern = "\\.log$", full.names = TRUE)
@@ -56,7 +56,7 @@ layout_disk27 <- map_dfr(disk27_files, function(file_path) {
 
 # Group into file-specific specs
 layout_by_file <- layout_disk27 |> 
-  group_by(file_path = file.path("inputs", disk, file)) |> 
+  group_by(file_path = file.path("inputs/unzipped", disk, file)) |> 
   summarise(
     fwf = list(fwf_positions(begin, end, col_names)),
     .groups = "drop"
