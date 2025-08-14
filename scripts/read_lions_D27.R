@@ -9,6 +9,7 @@ library(dplyr)
 library(fs)
 library(tibble)
 library(tidylog)
+library(tools) # for file_path_sans_ext()
 
 # Path to DISK27
 disk27_path <- "inputs/unzipped/DISK27"
