@@ -164,7 +164,7 @@ if (!is.na(latest_release_tag) && nzchar(latest_release_tag) && identical(latest
 zip_urls <- get_disk_links(latest_url) # Run our second function to get the DISK links
 if (length(zip_urls) == 0) stop("No DISK zip links found at: ", latest_url)
 
-zip_urls <- head(zip_urls, 1) # TEST LINE - only one link
+# zip_urls <- head(zip_urls, 1) # TEST LINE - only one link
   
 dests <- file.path("inputs", basename(zip_urls))
   
