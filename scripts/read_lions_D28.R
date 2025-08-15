@@ -64,7 +64,7 @@ layout_disk28 <- layout_disk28 |>
 # Create a list of file paths for each disk and file
 layout_by_file <- 
   layout_disk28 |>
-  group_by(file_path = file.path("inputs", disk, file)) |>
+  group_by(file_path = file.path("inputs/unzipped", disk, file)) |>
   summarise(
     fwf = list(fwf_positions(begin, end, col_names)),
     .groups = "drop"
