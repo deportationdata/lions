@@ -10,12 +10,16 @@ library(fs)
 library(tibble)
 library(tidylog)
 library(tools) # for file_path_sans_ext()
+library(arrow) # To handle feather
+
 
 # Path to DISK27
 disk27_path <- "inputs/unzipped/DISK27"
 
 # Find all .log files
 disk27_files <- list.files(disk27_path, pattern = "\\.log$", full.names = TRUE)
+disk27_filtered <- disk27_files[!str_detect(disk27_files, "_(compare_file_sizes|detailed_log)\\.log$")] # dropping files with a different format - we will read _detailed_log below
+
 
 # Function to detect fwf positions using dash line
 detect_fwf_positions <- function(file_path) {
@@ -41,7 +45,7 @@ detect_fwf_positions <- function(file_path) {
 }
 
 # Create layout table for DISK27
-layout_disk27 <- map_dfr(disk27_files, function(file_path) {
+layout_disk27 <- map_dfr(disk27_filtered, function(file_path) {
   col_positions <- detect_fwf_positions(file_path)
   
   tibble(
