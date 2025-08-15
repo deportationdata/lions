@@ -3,20 +3,29 @@
 
 library(tidyverse)
 library(readr)
-library(lubridate)
 library(arrow)
 library(tidylog)
-library(stringr)
 library(purrr)
 library(dplyr)
 library(tibble)
 library(fs) # To suppress messages
 library(tools)  # for file_path_sans_ext()
 
+# safer on CI (vroom multithreading can segfault on odd inputs)
+Sys.setenv(VROOM_NUM_THREADS = "1")
 
 # Path to DISK28 directory
 disk28_path <- "inputs/unzipped/DISK28"
-disk28_files <- list.files(disk28_path, pattern = "\\.txt$", full.names = TRUE)
+
+# Creating directory to save feather files
+output_dir <- "outputs"
+dir_create(output_dir, 
+           recurse = TRUE)  # ensures it does not throw an error if the directory already exists
+
+# List .txt files
+disk28_files <- list.files(disk28_path, pattern = "\\.txt$", full.names = TRUE) |>
+  keep(~ basename(.x) != "global_LIONS.txt")
+
 
 # Function: Detect fwf layout from full file lines
 detect_fwf_layout <- function(lines) {
@@ -26,25 +35,32 @@ detect_fwf_layout <- function(lines) {
   header_line <- lines[dash_line_idx - 1]
   dash_line <- lines[dash_line_idx]
   
-  dash_matches <- str_match_all(dash_line, "-+")[[1]]
-  starts <- str_locate_all(dash_line, "-+")[[1]][, 1]
-  ends <- starts + str_length(dash_matches[, 1]) - 1
+  spans <- str_locate_all(dash_line, "-+")[[1]]
+  if (is.null(spans) || nrow(spans) == 0) return(NULL)
+
+  starts <- spans[, 1]
+  ends   <- spans[, 2]
   
   col_names <- map2_chr(starts, ends, ~ str_trim(str_sub(header_line, .x, .y)))
   
-  fwf_positions(start = starts, end = ends, col_names = col_names)
+  keep_cols <- nzchar(col_names)
+  if (!any(keep_cols)) return(NULL)
+
+  fwf_positions(start = starts[keep_cols], end = ends[keep_cols], col_names = col_names[keep_cols])
 }
 
-# Process each DISK28 .txt file
+# Process each DISK28 .txt file skipping undetectable
 layout_disk28 <- map_dfr(disk28_files, function(file_path) {
   # Read first 100 lines as character vector
-  lines <- readLines(file_path, n = 100)  # read enough lines
+  lines <- readLines(file_path, n = 200L, warn = FALSE)  # read enough lines
   
   # Try to detect column layout
   col_positions <- detect_fwf_layout(lines)
   
-  if (is.null(col_positions)) return(tibble())  # Skip if layout not detected
-  
+  if (is.null(col_positions)) {
+    message("↷ No valid dashed header in: ", basename(file_path), " — skipping")
+    return(tibble())
+  }
   # Build layout tibble for each column
   tibble(
     disk = "DISK28",
@@ -52,15 +68,15 @@ layout_disk28 <- map_dfr(disk28_files, function(file_path) {
     col_names = col_positions$col_names,
     begin = col_positions$begin,
     end = col_positions$end,
-    file = basename(file_path),
-    is_lookup_table = FALSE
+    file = basename(file_path)
   )
 })
 
-layout_disk28 <- layout_disk28 |>
-  # global_LIONS is not a lookup table nor a data table; ignore completely 
-  filter(file != "global_LIONS.txt") 
-  
+if (nrow(layout_disk28) == 0L) {
+  message("No layouts detected in ", disk28_path, " — nothing to do.")
+  quit(save = "no", status = 0)
+}
+
 # Create a list of file paths for each disk and file
 layout_by_file <- 
   layout_disk28 |>
@@ -74,36 +90,36 @@ layout_by_file <-
 
 layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 
-# Creating directory to save feather files
-
-output_dir <- "outputs"
-dir_create(output_dir, 
-           recurse = TRUE)  # ensures it does not throw an error if the directory already exists
-
 #test_layout_tbl <- head(layout_tbl, 5) # For testing purposes, take only the first 5 entries
 
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
 
 walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
-  layout <- tbl[["fwf"]][[1]]
+  #layout <- tbl[["fwf"]][[1]]
+  if (!file_exists(path)) {
+    message("⚠ File not found: ", path)
+    return(invisible(NULL))
+  }
   
-  if (file_exists(path)) {
     tryCatch({
       
       # Extract the base name to save it
       base_name <- file_path_sans_ext(basename(path))
       feather_path <- file.path(output_dir, paste0(base_name, ".feather"))
       
-      if (file.exists(feather_path)) { # Including this skip to face crashes while running the code - If it crashes, it will not try to read files that were already read
-        message("Skipping (already exists): ", base_name)
-        return(invisible(NULL))
-      }
-      
       # Read the file as lines
-      lines <- readLines(path)
+      lines <- readLines(path, warn = FALSE)
       
       # Find the line index that contains only dashes (separator line)
-      sep_line <- str_which(lines, "^-{2,}")[1]
+      sep_line <- str_which(lines, "^-{3,}.*")[1]
+      if (is.na(sep_line)) {
+      message("↷ No dashed header at read time in: ", basename(path))
+      return(invisible(NULL))
+      }
+      if (sep_line >= length(lines)) {
+        message("↷ Dashed header is last line (no data) in: ", basename(path))
+        return(invisible(NULL))
+      }
       
       # Extract header and data lines
       header <- lines[sep_line - 1]
