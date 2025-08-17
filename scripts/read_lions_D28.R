@@ -114,14 +114,15 @@ walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
       enc_guess <- readr::guess_encoding(raw_bytes) |>
         arrange(desc(confidence)) |>
         slice(1) |>
-        pull(encoding) %>%                            # best encoding (or NA)
+        pull(encoding) |>                           # best encoding (or NA)
         purrr::pluck(1) %||% "UTF-8"                  # fallback to UTF-8
       
       # Read the file as lines using identified encoding
       con <- file(path, open = "r", encoding = enc_guess)
       lines <- readLines(con, warn = FALSE)      # all lines as character vector
       close(con)
-      
+
+      lines <- str_replace_all(lines, "\r$", "")
     
       # Find the line index that contains only dashes (separator line)
       sep_line <- stringr::str_which(lines, "^[\\-–—]{3,}.*$")[1]
