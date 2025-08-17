@@ -95,42 +95,48 @@ layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
 
 walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
-  #layout <- tbl[["fwf"]][[1]]
-  if (!file_exists(path)) {
-    message("⚠ File not found: ", path)
-    return(invisible(NULL))
-  }
+  layout <- tbl[["fwf"]][[1]]
   
+  if (file_exists(path)) {
     tryCatch({
       
       # Extract the base name to save it
       base_name <- file_path_sans_ext(basename(path))
       feather_path <- file.path(output_dir, paste0(base_name, ".feather"))
       
-      # Read the file as lines
-      lines <- readLines(path, warn = FALSE)
+      # if (file.exists(feather_path)) { # Including this skip to face crashes while running the code - If it crashes, it will not try to read files that were already read
+      #   message("Skipping (already exists): ", base_name)
+      #   return(invisible(NULL))
+      # }
       
+      # Avoid encoding errors by guessing the encoding of the file
+      raw_bytes <- readr::read_lines_raw(path)
+      enc_guess <- readr::guess_encoding(raw_bytes) |>
+        arrange(desc(confidence)) |>
+        slice(1) |>
+        pull(encoding) %>%                            # best encoding (or NA)
+        purrr::pluck(1) %||% "UTF-8"                  # fallback to UTF-8
+      
+      # Read the file as lines using identified encoding
+      con <- file(path, open = "r", encoding = enc_guess)
+      lines <- readLines(con, warn = FALSE)      # all lines as character vector
+      close(con)
+      
+    
       # Find the line index that contains only dashes (separator line)
-      sep_line <- str_which(lines, "^-{3,}.*")[1]
-      if (is.na(sep_line)) {
-      message("↷ No dashed header at read time in: ", basename(path))
-      return(invisible(NULL))
-      }
-      if (sep_line >= length(lines)) {
-        message("↷ Dashed header is last line (no data) in: ", basename(path))
-        return(invisible(NULL))
-      }
+      sep_line <- stringr::str_which(lines, "^[\\-–—]{3,}.*$")[1]
       
       # Extract header and data lines
       header <- lines[sep_line - 1]
-      data_lines <- lines[(sep_line + 1):length(lines)]
+      data_lines <- lines[(sep_line + 1L):length(lines)]
       
-      # Read the data
-      df <- read_fwf(I(data_lines), col_positions = layout, col_types = cols(.default = "c")) # The second line of each .txt file 
-      
-      # Replace * for NA
-      df <- df |> 
-        mutate(across(everything(), ~na_if(.x, "*")))
+      # Read the data avoiding encoding errors
+      df <- readr::read_fwf(
+        file          = I(data_lines),                 # <- character input
+        col_positions = layout,
+        col_types     = readr::cols(.default = "c"),
+        locale        = readr::locale(encoding = enc_guess)
+      )
       
       write_feather(df, feather_path)
       
@@ -142,5 +148,3 @@ walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
     message("⚠ File not found: ", path)
   }
 })
-
-
