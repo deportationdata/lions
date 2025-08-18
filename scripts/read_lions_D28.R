@@ -13,6 +13,7 @@ library(tools)  # for file_path_sans_ext()
 
 # safer on CI (vroom multithreading can segfault on odd inputs)
 Sys.setenv(VROOM_NUM_THREADS = "1")
+Sys.setenv(VROOM_USE_ALTREP = "false") 
 
 # Path to DISK28 directory
 disk28_path <- "inputs/unzipped/DISK28"
