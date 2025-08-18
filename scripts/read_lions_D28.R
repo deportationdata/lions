@@ -92,6 +92,21 @@ layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 
 #test_layout_tbl <- head(layout_tbl, 5) # For testing purposes, take only the first 5 entries
 
+
+fwf_parse_lines <- function(lines, layout) {
+  if (length(lines) == 0) return(tibble())
+  starts <- layout$begin
+  ends   <- layout$end
+  cols   <- layout$col_names
+  # build a tibble column-by-column with str_sub; trim right spaces
+  out <- map2(starts, ends, \(s, e) str_sub(lines, s, e) |> str_replace("\\s+$", "")) |>
+    set_names(cols) |>
+    tibble::as_tibble(.name_repair = "minimal")
+  out
+}
+
+
+
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
 
 walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
@@ -132,12 +147,14 @@ walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
       data_lines <- lines[(sep_line + 1L):length(lines)]
       
       # Read the data avoiding encoding errors
-      df <- readr::read_fwf(
-        file          = I(data_lines),                 # <- character input
-        col_positions = layout,
-        col_types     = readr::cols(.default = "c"),
-        locale        = readr::locale(encoding = enc_guess)
-      )
+      #df <- readr::read_fwf(
+       # file          = I(data_lines),                 # <- character input
+       # col_positions = layout,
+       # col_types     = readr::cols(.default = "c"),
+       # locale        = readr::locale(encoding = enc_guess)
+      #)
+               
+      df <- fwf_parse_lines(data_lines, layout)
       
       write_feather(df, feather_path)
       
