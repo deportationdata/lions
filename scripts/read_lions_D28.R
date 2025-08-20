@@ -2,14 +2,10 @@
 #  Read me from this Disk does not include positions but the formatting of the .txt is clearer, so we'll read them by detecting the layout automatically from dashes
 
 library(tidyverse)
-library(readr)
 library(arrow)
 library(tidylog)
-library(purrr)
-library(dplyr)
-library(tibble)
-library(fs) # To suppress messages
-library(tools)  # for file_path_sans_ext()
+library(fs)       # To suppress messages
+library(tools)    # for file_path_sans_ext()
 
 # safer on CI (vroom multithreading can segfault on odd inputs)
 Sys.setenv(VROOM_NUM_THREADS = "1")
@@ -27,7 +23,6 @@ dir_create(output_dir,
 disk28_files <- list.files(disk28_path, pattern = "\\.txt$", full.names = TRUE) |>
   keep(~ basename(.x) != "global_LIONS.txt")
 
-
 # Function: Detect fwf layout from full file lines
 detect_fwf_layout <- function(lines) {
   dash_line_idx <- which(str_detect(lines, "^-{3,}.*"))[1]
@@ -44,7 +39,7 @@ detect_fwf_layout <- function(lines) {
   
   col_names <- map2_chr(starts, ends, ~ str_trim(str_sub(header_line, .x, .y)))
   
-  keep_cols <- nzchar(col_names)
+  keep_cols <- nzchar(col_names) # TODO: what does this do?
   if (!any(keep_cols)) return(NULL)
 
   fwf_positions(start = starts[keep_cols], end = ends[keep_cols], col_names = col_names[keep_cols])
@@ -83,7 +78,7 @@ layout_by_file <-
   layout_disk28 |>
   group_by(file_path = file.path("inputs/unzipped", disk, file)) |>
   summarise(
-    fwf = list(fwf_positions(begin, end, col_names)),
+    fwf = list(fwf_positions(begin, end, col_names)), # This runs fwf_positions a second time -- it was already run in detect_fwf_layout called in layout_disk28 - so it screws up the layout and makes it start at -1
     .groups = "drop"
   )
 
