@@ -152,13 +152,13 @@ message("Latest GitHub release tag: ", msg_release)
 
 # CHECKER: Decide whether we need to skip downloads or not
 
-if (!is.na(latest_release_tag) && nzchar(latest_release_tag) && identical(latest_release_tag, latest_tag)) {
-  message("Already released ", latest_tag, " — skipping download.")
-  if (nzchar(ghout)) cat("SHOULD_RUN=false\n", file = ghout, append = TRUE)
-  quit(save = "no", status = 0)  # Stop if there is no new release
-} else {
-  if (nzchar(ghout)) cat("SHOULD_RUN=true\n", file = ghout, append = TRUE) # Otherwise, proceed
-}
+#if (!is.na(latest_release_tag) && nzchar(latest_release_tag) && identical(latest_release_tag, latest_tag)) {
+#  message("Already released ", latest_tag, " — skipping download.")
+#  if (nzchar(ghout)) cat("SHOULD_RUN=false\n", file = ghout, append = TRUE)
+#  quit(save = "no", status = 0)  # Stop if there is no new release
+#} else {
+#  if (nzchar(ghout)) cat("SHOULD_RUN=true\n", file = ghout, append = TRUE) # Otherwise, proceed
+#}
 
 # Download new month zips
 zip_urls <- get_disk_links(latest_url) # Run our second function to get the DISK links
