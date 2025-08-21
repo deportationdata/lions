@@ -49,13 +49,13 @@ jobs:
           Rscript scripts/read_lions_D28.R
           Rscript scripts/read_lions_D27.R
 
-      - uses: ncipollo/release-action@v1
-        if: env.SHOULD_RUN == 'true' && env.LATEST_MONTH_TAG != '' && env.LATEST_MONTH_NAME != '' # Action won't fail when there’s nothing to release.
-        with:
-          tag: ${{ env.LATEST_MONTH_TAG }} # Tagging with month so it's possible to check 
-          name: "LIONS latest release ${{ env.LATEST_MONTH_NAME }}"
-          artifacts: |
-            outputs/*.feather
-          generateReleaseNotes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+     # - uses: ncipollo/release-action@v1
+     #   if: env.SHOULD_RUN == 'true' && env.LATEST_MONTH_TAG != '' && env.LATEST_MONTH_NAME != '' # Action won't fail when there’s nothing to release.
+     #   with:
+     #     tag: ${{ env.LATEST_MONTH_TAG }} # Tagging with month so it's possible to check 
+     #     name: "LIONS latest release ${{ env.LATEST_MONTH_NAME }}"
+     #     artifacts: |
+     #       outputs/*.feather
+     #     generateReleaseNotes: true
+     #   env:
+     #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
