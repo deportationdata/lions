@@ -20,30 +20,42 @@ jobs:
       - name: Download data
         run: |
           mkdir -p inputs
-          Rscript scripts/download_lions.R  
-
+          Rscript scripts/download_lions.R # This script scrapes the LIONS website for links, checks for new data, and downloads if new releases are available
+      
+      - name: Show decided env
+        run: |
+          printf 'SHOULD_RUN=[%s]\n' "${SHOULD_RUN}" 
+          printf 'LATEST_MONTH_TAG=[%s]\n' "${LATEST_MONTH_TAG}"
+          printf 'LATEST_MONTH_NAME=[%s]\n' "${LATEST_MONTH_NAME}"
+      
       - name: Unzip data
+        if: env.SHOULD_RUN == 'true' # Written in the checker of 'Download data' scripts/download_lions.R
         run: |
           mkdir -p inputs/unzipped
-          shopt -s nullglob
-          for z in inputs/*.zip; do
+
+          for z in inputs/*.[Zz][Ii][Pp]; do
             echo "Unzipping $z"
-            unzip -jo "$z" -d inputs/unzipped
+            basename=$(basename "$z")
+            basename=${basename%.[Zz][Ii][Pp]}
+            mkdir -p "inputs/unzipped/$basename"
+            unzip -o "$z" -d "inputs/unzipped/$basename"
           done
-          rm -f inputs/*.zip
 
       - name: Process data
+        if: env.SHOULD_RUN == 'true'
         run: |
           mkdir -p outputs
-          Rscript scripts/run_lions.R
+          Rscript scripts/read_lions.R
+          Rscript scripts/read_lions_D28.R
+          Rscript scripts/read_lions_D27.R
 
-      - uses: ncipollo/release-action@v1
-        with:
-          tag: lions-latest-${{ github.sha }}
-          name: "LIONS latest release ${{ github.sha }}"
-          artifacts: |
-            outputs/*.feather
-            outputs/*.rds
-          generateReleaseNotes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+     # - uses: ncipollo/release-action@v1
+     #   if: env.SHOULD_RUN == 'true' && env.LATEST_MONTH_TAG != '' && env.LATEST_MONTH_NAME != '' # Action won't fail when there’s nothing to release.
+     #   with:
+     #     tag: ${{ env.LATEST_MONTH_TAG }} # Tagging with month so it's possible to check 
+     #     name: "LIONS latest release ${{ env.LATEST_MONTH_NAME }}"
+     #     artifacts: |
+     #       outputs/*.feather
+     #     generateReleaseNotes: true
+     #   env:
+     #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

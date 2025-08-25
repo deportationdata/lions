@@ -48,10 +48,9 @@ get_latest_lions_month <- function(
     ) |>
     arrange(desc(date_key)) # Arranges to have the most recent month first
   
-  
   list(
     all_months = data_links |> select(date_key, month_name, year, url, text),
-    latest     = data_links |> slice(1) |> select(date_key, month_name, year, url) # Gets the url of the most recent month's data files
+    latest     = data_links |> slice(1) |> select(date_key, month_name, year, month_num, url) # Gets the url of the most recent month's data files
   )
 }
 
@@ -104,32 +103,74 @@ download_with_retry <- function(url, path, tries = 3) {
   stop("Failed to download after retries: ", url)
 }
 
-# ------------------------------
-# Running all functions
-# ------------------------------
-main <- function() {
-  fs::dir_create("inputs")
+# Function to get tag for the latest release GitHub: latest release TAG for this repo (or NA if none) ---
 
-  latest_url <- get_latest_lions_month() |> # Run our first function to get the latest month
-    purrr::pluck("latest") |>
-    dplyr::pull(url)
-  message("Latest month page: ", latest_url) # Show the latest month
-
-  zip_urls <- get_disk_links(latest_url) # Run our second function to get the DISK links
-  zip_urls <- head(zip_urls, 1) # TEST LINE - only one link
-  if (length(zip_urls) == 0) stop("No DISK zip links found at: ", latest_url) # Error message in case there are no disk links
-
-  dests <- file.path("inputs", basename(zip_urls))
-  
-  walk2(zip_urls, dests, \(url, path) {
-    message("→ Downloading ", basename(path))
-    download_with_retry(url, path)
-  })
-  
-  message("All downloads completed into ./inputs")
+get_latest_github_release_tag <- function(repo = Sys.getenv("GITHUB_REPOSITORY"),
+                                          token = Sys.getenv("GITHUB_TOKEN")) {
+  if (identical(repo, "")) stop("GITHUB_REPOSITORY not set (expected 'owner/repo').")
+  url <- paste0("https://api.github.com/repos/", repo, "/releases/latest") # Getting JSON of latest release
+  hdr <- httr::add_headers(
+    `User-Agent` = UA,
+    Authorization = if (nzchar(token)) paste("Bearer", token) else NULL,
+    Accept = "application/vnd.github+json"
+  )
+  resp <- httr::GET(url, hdr)
+  if (httr::status_code(resp) == 404) return(NA_character_)  # no releases yet
+  httr::stop_for_status(resp)
+  json <- httr::content(resp, as = "parsed")
+  # Prefer tag_name; fall back to name if needed
+  tag <- json$tag_name %||% json$name %||% NA_character_ # Getting the tag name of the latest release (it's automatically called tag_name in release's json)
+  as.character(tag)
 }
 
-# Run if called via Rscript
-if (identical(environmentName(environment()), "R_GlobalEnv")) {
-  main()
+
+## Running all functions
+
+fs::dir_create("inputs")
+
+# Identify latest month on DOJ
+latest <- get_latest_lions_month() |> purrr::pluck("latest") # Run our first function
+latest_url  <- latest |> dplyr::pull(url)
+latest_name <- sprintf("%s %d", latest$month_name, latest$year)        # e.g., "April 2025"
+latest_tag  <- sprintf("%04d-%02d", latest$year, latest$month_num)     # e.g., "2025-04"
+
+
+message("DOJ latest: ", latest_name, " (tag ", latest_tag, ")") # Show the latest month
+message("Month page: ", latest_url) # and its URL
+
+# Getting the month tag to name the release with the month (this is pulled in the YAML later)
+ghout <- Sys.getenv("GITHUB_ENV")
+if (nzchar(ghout)) {
+  cat(sprintf("LATEST_MONTH_TAG=%s\n",  latest_tag),  file = ghout, append = TRUE)
+  cat(sprintf("LATEST_MONTH_NAME=%s\n", latest_name), file = ghout, append = TRUE)
 }
+
+# Compare with latest GitHub release tag
+latest_release_tag <- get_latest_github_release_tag()
+msg_release <- if (is.na(latest_release_tag) || !nzchar(latest_release_tag)) "<none>" else latest_release_tag
+message("Latest GitHub release tag: ", msg_release)
+
+# CHECKER: Decide whether we need to skip downloads or not
+
+#if (!is.na(latest_release_tag) && nzchar(latest_release_tag) && identical(latest_release_tag, latest_tag)) {
+#  message("Already released ", latest_tag, " — skipping download.")
+#  if (nzchar(ghout)) cat("SHOULD_RUN=false\n", file = ghout, append = TRUE)
+#  quit(save = "no", status = 0)  # Stop if there is no new release
+#} else {
+#  if (nzchar(ghout)) cat("SHOULD_RUN=true\n", file = ghout, append = TRUE) # Otherwise, proceed
+#}
+
+# Download new month zips
+zip_urls <- get_disk_links(latest_url) # Run our second function to get the DISK links
+if (length(zip_urls) == 0) stop("No DISK zip links found at: ", latest_url)
+
+# zip_urls <- head(zip_urls, 1) # TEST LINE - only one link
+  
+dests <- file.path("inputs", basename(zip_urls))
+  
+walk2(zip_urls, dests, \(url, path) {
+  message("→ Downloading ", basename(path))
+  download_with_retry(url, path)
+})
+  
+message("All downloads completed into ./inputs")

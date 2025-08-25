@@ -10,11 +10,6 @@ library(tibble)
 library(fs) # To suppress messages
 library(tools)  # for file_path_sans_ext()
 
-# Output directory
-
-setwd("~/Dropbox/deportationdata")
-
-
 parse_table_chunk <- function(chunk, disk) { # Each disk folder (currently 28) has a README.txt file and other gs_*.txt files (27 is an exception***)
   header <- chunk[1]
   table <- str_extract(header, "^GS_[A-Z0-9_]+")
@@ -81,7 +76,7 @@ derive_table <- \(f) {
 # read in all of the README files in any DISC** folder
 readmes <-
   dir(
-    "data/EOUSA",
+    "inputs",
     pattern = "README\\.txt$",
     recursive = TRUE, # looks in subdirectories too
     full.names = TRUE # full file paths instead of just filenames
@@ -120,7 +115,7 @@ layouts_lookup <-
 
 # Create a list of file paths for each disk and file
 layout_by_file <- layouts_data |>
-  group_by(file_path = file.path("data/EOUSA/LIONS", disk, file)) |>
+  group_by(file_path = file.path("inputs/unzipped", disk, file)) |>
   summarise(
     fwf = list(fwf_positions(begin, end, col_names)),
     .groups = "drop"
@@ -132,10 +127,9 @@ layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 
 # Creating directory to save feather files
 
-output_dir <- "_processing/intermediate/EOUSA/library/lions_data"
-dir_create(output_dir)
+output_dir <- "outputs"
 
-#test_layout_tbl <- head(layout_tbl,400) # For testing purposes, take only the first 5 entries
+fs::dir_create(output_dir)
 
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
 
@@ -149,10 +143,10 @@ walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
       base_name <- file_path_sans_ext(basename(path))
       feather_path <- file.path(output_dir, paste0(base_name, ".feather"))
 
-      if (file.exists(feather_path)) { # Including this skip to face crashes while running the code - If it crashes, it will not try to read files that were already read
-        message("Skipping (already exists): ", base_name)
-        return(invisible(NULL))
-      }
+      #if (file.exists(feather_path)) { # Including this skip to face crashes while running the code - If it crashes, it will not try to read files that were already read
+      #  message("Skipping (already exists): ", base_name)
+      #  return(invisible(NULL))
+      # }
       
       df <- read_fwf(path, col_positions = layout, col_types = cols(.default = "c"))  # No warning
       

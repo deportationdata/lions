@@ -1,33 +1,27 @@
-## Disk28 - This script reads the DISK28 files, which are formatted differently than the other disks.
-
+## Disk28 - This script reads the DISK28 files, which are formatted differently than the other disks
 #  Read me from this Disk does not include positions but the formatting of the .txt is clearer, so we'll read them by detecting the layout automatically from dashes
 
 library(tidyverse)
-library(readr)
-library(lubridate)
 library(arrow)
 library(tidylog)
-library(stringr)
-library(purrr)
-library(dplyr)
-library(tibble)
-library(fs) # To suppress messages
-library(tools)  # for file_path_sans_ext()
+library(fs)       # To suppress messages
+library(tools)    # for file_path_sans_ext()
 
-# Output directory
-
-setwd("~/Dropbox/deportationdata")
+# safer on CI (vroom multithreading can segfault on odd inputs)
+Sys.setenv(VROOM_NUM_THREADS = "1")
+Sys.setenv(VROOM_USE_ALTREP = "false") 
 
 # Path to DISK28 directory
-disk28_path <- "~/Dropbox/deportationdata/data/EOUSA/LIONS/DISK28"
+disk28_path <- "inputs/unzipped/DISK28"
 
-# List all .txt files in DISK28
-disk28_files <- list.files(disk28_path, pattern = "\\.txt$", full.names = TRUE)
+# Creating directory to save feather files
+output_dir <- "outputs"
+dir_create(output_dir, 
+           recurse = TRUE)  # ensures it does not throw an error if the directory already exists
 
-# Set working directory and path to DISK28 files
-setwd("~/Dropbox/deportationdata")
-disk28_path <- "~/Dropbox/deportationdata/data/EOUSA/LIONS/DISK28"
-disk28_files <- list.files(disk28_path, pattern = "\\.txt$", full.names = TRUE)
+# List .txt files
+disk28_files <- list.files(disk28_path, pattern = "\\.txt$", full.names = TRUE) |>
+  keep(~ basename(.x) != "global_LIONS.txt")
 
 # Function: Detect fwf layout from full file lines
 detect_fwf_layout <- function(lines) {
@@ -37,25 +31,32 @@ detect_fwf_layout <- function(lines) {
   header_line <- lines[dash_line_idx - 1]
   dash_line <- lines[dash_line_idx]
   
-  dash_matches <- str_match_all(dash_line, "-+")[[1]]
-  starts <- str_locate_all(dash_line, "-+")[[1]][, 1]
-  ends <- starts + str_length(dash_matches[, 1]) - 1
+  spans <- str_locate_all(dash_line, "-+")[[1]]
+  if (is.null(spans) || nrow(spans) == 0) return(NULL)
+
+  starts <- spans[, 1]
+  ends   <- spans[, 2]
   
   col_names <- map2_chr(starts, ends, ~ str_trim(str_sub(header_line, .x, .y)))
   
-  fwf_positions(start = starts, end = ends, col_names = col_names)
+  keep_cols <- nzchar(col_names) # TODO: what does this do?
+  if (!any(keep_cols)) return(NULL)
+
+  fwf_positions(start = starts[keep_cols], end = ends[keep_cols], col_names = col_names[keep_cols])
 }
 
-# Process each DISK28 .txt file
+# Process each DISK28 .txt file skipping undetectable
 layout_disk28 <- map_dfr(disk28_files, function(file_path) {
   # Read first 100 lines as character vector
-  lines <- readLines(file_path, n = 100)  # read enough lines
+  lines <- readLines(file_path, n = 200L, warn = FALSE)  # read enough lines
   
   # Try to detect column layout
   col_positions <- detect_fwf_layout(lines)
   
-  if (is.null(col_positions)) return(tibble())  # Skip if layout not detected
-  
+  if (is.null(col_positions)) {
+    message("↷ No valid dashed header in: ", basename(file_path), " — skipping")
+    return(tibble())
+  }
   # Build layout tibble for each column
   tibble(
     disk = "DISK28",
@@ -63,21 +64,21 @@ layout_disk28 <- map_dfr(disk28_files, function(file_path) {
     col_names = col_positions$col_names,
     begin = col_positions$begin,
     end = col_positions$end,
-    file = basename(file_path),
-    is_lookup_table = FALSE
+    file = basename(file_path)
   )
 })
 
-layout_disk28 <- layout_disk28 |>
-  # global_LIONS is not a lookup table nor a data table; ignore completely 
-  filter(file != "global_LIONS.txt") 
-  
+if (nrow(layout_disk28) == 0L) {
+  message("No layouts detected in ", disk28_path, " — nothing to do.")
+  quit(save = "no", status = 0)
+}
+
 # Create a list of file paths for each disk and file
 layout_by_file <- 
   layout_disk28 |>
-  group_by(file_path = file.path("data/EOUSA/LIONS", disk, file)) |>
+  group_by(file_path = file.path("inputs/unzipped", disk, file)) |>
   summarise(
-    fwf = list(fwf_positions(begin, end, col_names)),
+    fwf = list(fwf_positions(begin, end, col_names)), # This runs fwf_positions a second time -- it was already run in detect_fwf_layout called in layout_disk28 - so it screws up the layout and makes it start at -1
     .groups = "drop"
   )
 
@@ -85,13 +86,22 @@ layout_by_file <-
 
 layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 
-# Creating directory to save feather files
-
-output_dir <- "_processing/intermediate/EOUSA/library/lions_data"
-dir_create(output_dir, 
-           recurse = TRUE)  # ensures it does not throw an error if the directory already exists
-
 #test_layout_tbl <- head(layout_tbl, 5) # For testing purposes, take only the first 5 entries
+
+
+fwf_parse_lines <- function(lines, layout) {
+  if (length(lines) == 0) return(tibble())
+  starts <- layout$begin
+  ends   <- layout$end
+  cols   <- layout$col_names
+  # build a tibble column-by-column with str_sub; trim right spaces
+  out <- map2(starts, ends, \(s, e) str_sub(lines, s, e) |> str_replace("\\s+$", "")) |>
+    set_names(cols) |>
+    tibble::as_tibble(.name_repair = "minimal")
+  out
+}
+
+
 
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
 
@@ -105,27 +115,42 @@ walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
       base_name <- file_path_sans_ext(basename(path))
       feather_path <- file.path(output_dir, paste0(base_name, ".feather"))
       
-      if (file.exists(feather_path)) { # Including this skip to face crashes while running the code - If it crashes, it will not try to read files that were already read
-        message("Skipping (already exists): ", base_name)
-        return(invisible(NULL))
-      }
+      # if (file.exists(feather_path)) { # Including this skip to face crashes while running the code - If it crashes, it will not try to read files that were already read
+      #   message("Skipping (already exists): ", base_name)
+      #   return(invisible(NULL))
+      # }
       
-      # Read the file as lines
-      lines <- readLines(path)
+      # Avoid encoding errors by guessing the encoding of the file
+      raw_bytes <- readr::read_lines_raw(path)
+      enc_guess <- readr::guess_encoding(raw_bytes) |>
+        arrange(desc(confidence)) |>
+        slice(1) |>
+        pull(encoding) |>                           # best encoding (or NA)
+        purrr::pluck(1) %||% "UTF-8"                  # fallback to UTF-8
       
+      # Read the file as lines using identified encoding
+      con <- file(path, open = "r", encoding = enc_guess)
+      lines <- readLines(con, warn = FALSE)      # all lines as character vector
+      close(con)
+
+      lines <- str_replace_all(lines, "\r$", "")
+    
       # Find the line index that contains only dashes (separator line)
-      sep_line <- str_which(lines, "^-{2,}")[1]
+      sep_line <- stringr::str_which(lines, "^[\\-–—]{3,}.*$")[1]
       
       # Extract header and data lines
       header <- lines[sep_line - 1]
-      data_lines <- lines[(sep_line + 1):length(lines)]
+      data_lines <- lines[(sep_line + 1L):length(lines)]
       
-      # Read the data
-      df <- read_fwf(I(data_lines), col_positions = layout, col_types = cols(.default = "c")) # The second line of each .txt file 
-      
-      # Replace * for NA
-      df <- df |> 
-        mutate(across(everything(), ~na_if(.x, "*")))
+      # Read the data avoiding encoding errors
+      #df <- readr::read_fwf(
+       # file          = I(data_lines),                 # <- character input
+       # col_positions = layout,
+       # col_types     = readr::cols(.default = "c"),
+       # locale        = readr::locale(encoding = enc_guess)
+      #)
+               
+      df <- fwf_parse_lines(data_lines, layout)
       
       write_feather(df, feather_path)
       
@@ -137,5 +162,3 @@ walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
     message("⚠ File not found: ", path)
   }
 })
-
-

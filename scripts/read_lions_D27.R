@@ -9,16 +9,17 @@ library(dplyr)
 library(fs)
 library(tibble)
 library(tidylog)
+library(tools) # for file_path_sans_ext()
+library(arrow) # To handle feather
 
-# Output directory
-
-setwd("~/Dropbox/deportationdata")
 
 # Path to DISK27
-disk27_path <- "~/Dropbox/deportationdata/data/EOUSA/LIONS/DISK27"
+disk27_path <- "inputs/unzipped/DISK27"
 
 # Find all .log files
 disk27_files <- list.files(disk27_path, pattern = "\\.log$", full.names = TRUE)
+disk27_filtered <- disk27_files[!str_detect(disk27_files, "_(compare_file_sizes|detailed_log)\\.log$")] # dropping files with a different format - we will read _detailed_log below
+
 
 # Function to detect fwf positions using dash line
 detect_fwf_positions <- function(file_path) {
@@ -44,7 +45,7 @@ detect_fwf_positions <- function(file_path) {
 }
 
 # Create layout table for DISK27
-layout_disk27 <- map_dfr(disk27_files, function(file_path) {
+layout_disk27 <- map_dfr(disk27_filtered, function(file_path) {
   col_positions <- detect_fwf_positions(file_path)
   
   tibble(
@@ -60,7 +61,7 @@ layout_disk27 <- map_dfr(disk27_files, function(file_path) {
 
 # Group into file-specific specs
 layout_by_file <- layout_disk27 |> 
-  group_by(file_path = file.path("data/EOUSA/LIONS", disk, file)) |> 
+  group_by(file_path = file.path("inputs/unzipped", disk, file)) |> 
   summarise(
     fwf = list(fwf_positions(begin, end, col_names)),
     .groups = "drop"
@@ -70,11 +71,9 @@ layout_by_file <- layout_disk27 |>
 layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 
 # Directory to save intermediate feather files
-output_dir <-  "_processing/intermediate/EOUSA/library/lions_data"
+output_dir <-  "outputs"
 dir_create(output_dir)
 
-
-#test_layout_tbl <- head(layout_tbl, 2) # For testing purposes, take only the first 5 entries
 
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
 
@@ -88,10 +87,10 @@ walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
       base_name <- file_path_sans_ext(basename(path))
       feather_path <- file.path(output_dir, paste0(base_name, ".feather"))
       
-      if (file.exists(feather_path)) { # Including this skip to face crashes while running the code - If it crashes, it will not try to read files that were already read
-        message("Skipping (already exists): ", base_name)
-        return(invisible(NULL))
-      }
+      # if (file.exists(feather_path)) { # Including this skip to face crashes while running the code - If it crashes, it will not try to read files that were already read
+      #  message("Skipping (already exists): ", base_name)
+      #  return(invisible(NULL))
+      # }
       
       # Read the file as lines
       lines <- readLines(path)
