@@ -9,9 +9,9 @@ library(arrow)
 
 # 0. Setup directories
 
-input_dir <- "inputs"
+input_dir <- "outputs"
 
-output_dir <- "inputs"
+output_dir <- "outputs"
 
 # 1. Redacting function
 
