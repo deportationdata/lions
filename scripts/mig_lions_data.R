@@ -1,6 +1,8 @@
 # Description: This script creates the lions data set of immigration related cases to upload to deportationdataproject.org
 
 library(dplyr)
+library(tidyverse)
+library(tidylog)
 library(arrow)
 library(purrr)
 library(rlang)
