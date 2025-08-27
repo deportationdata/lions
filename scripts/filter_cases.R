@@ -4,15 +4,14 @@ library(readr)
 library(dplyr)
 library(stringr)
 library(arrow)
+library(fs)
 
 # Setup directories
 
-setwd("~/Library/CloudStorage/Box-Box/deportationdata")
+input_dir <- "outputs"
 
-input_dir <- "_processing/intermediate/EOUSA/library/lions_data"
-
-output_dir <- "_processing/intermediate/EOUSA/library/lions_data/filtered"
-dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+output_dir <- "outputs/mig_LIONS"
+fs::dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 # 1. List setups
 ## 1.1. List of Immigration Status - Update as needed. Keep the following format for correct filtering "8 U.S.C. § 1306(a)"  
