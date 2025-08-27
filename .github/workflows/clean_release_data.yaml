@@ -28,11 +28,6 @@ jobs:
           printf 'LATEST_MONTH_TAG=[%s]\n' "${LATEST_MONTH_TAG}"
           printf 'LATEST_MONTH_NAME=[%s]\n' "${LATEST_MONTH_NAME}"
           
-      - name: Deidentify PII 
-        run: |
-          mkdir -p inputs
-          Rscript scripts/deidentifying.R # This script redacts pii   
-          
       - name: Unzip data
         # if: env.SHOULD_RUN == 'true' # Written in the checker of 'Download data' scripts/download_lions.R
         run: |
@@ -53,6 +48,12 @@ jobs:
           Rscript scripts/read_lions.R
           # Rscript scripts/read_lions_D28.R
           # Rscript scripts/read_lions_D27.R
+
+      - name: Deidentify PII 
+        run: |
+          mkdir -p outputs
+          Rscript scripts/deidentifying.R # This script redacts pii   
+          
 
      # - uses: ncipollo/release-action@v1
      #   if: env.SHOULD_RUN == 'true' && env.LATEST_MONTH_TAG != '' && env.LATEST_MONTH_NAME != '' # Action won't fail when there’s nothing to release.
