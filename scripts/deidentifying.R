@@ -9,12 +9,9 @@ library(arrow)
 
 # 0. Setup directories
 
-setwd("~/Library/CloudStorage/Box-Box/deportationdata")
+input_dir <- "inputs"
 
-input_dir <- "_processing/intermediate/EOUSA/library/lions_data"
-
-output_dir <- "_processing/intermediate/EOUSA/library/lions_data_deidentified"
-dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+output_dir <- "inputs"
 
 # 1. Redacting function
 
