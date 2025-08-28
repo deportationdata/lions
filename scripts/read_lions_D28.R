@@ -38,8 +38,10 @@ detect_fwf_layout <- function(lines) {
   ends   <- spans[, 2]
   
   col_names <- map2_chr(starts, ends, ~ str_trim(str_sub(header_line, .x, .y)))
-  
-  keep_cols <- nzchar(col_names) # TODO: what does this do?
+
+  # Marking columns that are not empty
+  keep_cols <- nzchar(col_names) 
+  # Check if we detected any non-empty column names. If not, bail out and return NULL
   if (!any(keep_cols)) return(NULL)
 
   fwf_positions(start = starts[keep_cols], end = ends[keep_cols], col_names = col_names[keep_cols])
