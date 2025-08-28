@@ -1,4 +1,4 @@
-name: Create Migration LIONS Data
+name: "Create Migration LIONS Data"
 
 on:
   workflow_run:

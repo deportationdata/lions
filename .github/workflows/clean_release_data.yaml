@@ -1,4 +1,4 @@
-name: Download and release latest LIONS data 
+name: "Download and release latest LIONS data"
 
 on:
   push:
