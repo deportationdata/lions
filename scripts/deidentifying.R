@@ -31,24 +31,24 @@ redact_pii <- function(input_path, output_path, vars) {
 mapping <- tibble(
   file  = c("gs_case_doj_div.feather", # .Include full names (n < 15), addresses, A-Numbers, phone numbers and numbers with SSN structure (XXX-XX-XXXX) instead of DOJ_NUMBER
             "gs_court_hist.feather", # Includes full names or case names (n < 15), addresses, A-numbers, phone numbers, and (potentially) SSN instead of COURT_NUMBER
-            "table_gs_oppose_attorn.feather", # Phone numbers instead of ZipCode
+            # "table_gs_oppose_attorn.feather", # Phone numbers instead of ZipCode
             "gs_archive_case.feather", # Includes full names for some of the “last lead attorney” (AUSA_LAST_NAME)
             "gs_defend_stat.feather", # Includes full names, addresses and phone numbers of bond providers in BOND_PROVIDER
             "gs_relief.feather", # Some rows in AMOUNT are flagged as phone numbers
             "gs_staff.feather", # Includes full names, some emails, and the specific office location of staff members (active or not)
-            "table_gs_judge.feather", # Includes full names and courtroom location (Cities and/or addresses) of judges
+            # "table_gs_judge.feather", # Includes full names and courtroom location (Cities and/or addresses) of judges
             "gs_case.feather", # DCMNS_NUMBER includes numbers flagged as SSN/ITIN, but do not follow the same structure
             "gs_sentence.feather" # Flagged phone numbers instead of RELATED_FLU_USAO. 
             ), 
   vars  = list(
     c("DOJ_NUMBER"),
     c("COURT_NUMBER"),
-    c("ZipCode"),
+    # c("ZipCode"),
     c("AUSA_LAST_NAME"),
     c("BOND_PROVIDER"),
     c("AMOUNT"),
     c("LAST_NAME","FIRST_NAME","OFFICE_LOC"),
-    c("LastName","FirstName","CourtRoom"),
+    # c("LastName","FirstName","CourtRoom"),
     c("DCMNS_NUMBER"),
     c("RELATED_FLU_USAO")
   )
