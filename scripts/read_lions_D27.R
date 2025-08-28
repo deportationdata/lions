@@ -16,28 +16,36 @@ library(arrow) # To handle feather
 # Path to DISK27
 disk27_path <- "inputs/unzipped/DISK27"
 
+# For local tests:
+# disk27_path <- "~/Library/CloudStorage/Box-Box/deportationdata/data/EOUSA/LIONS/DISK27"
+
 # Find all .log files
 disk27_files <- list.files(disk27_path, pattern = "\\.log$", full.names = TRUE)
 disk27_filtered <- disk27_files[!str_detect(disk27_files, "_(compare_file_sizes|detailed_log)\\.log$")] # dropping files with a different format - we will read _detailed_log below
 
+## TEST 
+# file_path <- disk27_filtered[1] # For testing
 
 # Function to detect fwf positions using dash line
 detect_fwf_positions <- function(file_path) {
   # Read at least 5 lines to capture header + dashes
   header_lines <- readLines(file_path, n = 5)
   
-  # Find the first dashed line
+  # Identifies where the dashes are
   dash_line_index <- grep("^-{2,}", header_lines)[1]
+  # Gets the dashed line
   dashes_line <- header_lines[dash_line_index]
+  # From dashed line, gets the line with the column names
   colnames_line <- header_lines[dash_line_index - 1]
   
   # Use gregexpr to find start positions of dashes
   matches <- gregexpr("-+", dashes_line)
   starts <- as.vector(unlist(matches))
+  # Gets how many dashes there are to identify width
   widths <- as.vector(unlist(attr(matches[[1]], "match.length")))
   starts <- starts[starts != -1]
   
-  # Extract and trim column names
+  # Extract and trim column names using the column width we detected
   col_names <- map2_chr(starts, widths, ~ str_trim(substr(colnames_line, .x, .x + .y - 1)))
   
   # Return fwf specification
@@ -50,9 +58,9 @@ layout_disk27 <- map_dfr(disk27_filtered, function(file_path) {
   
   tibble(
     disk = "DISK27",
-    table = toupper(str_remove(basename(file_path), "\\.log$")),
+    table = str_remove(basename(file_path), "\\.log$"),
     col_names = col_positions$col_names,
-    begin = col_positions$begin,
+    begin = col_positions$begin + 1, # Adjusting so fwf_positions won't get negative positions 
     end = col_positions$end,
     file = basename(file_path),
     is_lookup_table = FALSE
@@ -72,13 +80,19 @@ layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 
 # Directory to save intermediate feather files
 output_dir <-  "outputs"
+# output_dir <- "~/Dropbox/DDP/Tests" # For tests
 dir_create(output_dir)
 
 
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
 
+# Test
+# tbl <- layout_tbl
+# path <- names(layout_tbl)[1]
+
 walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
-  layout <- tbl[["fwf"]][[1]]
+  
+  layout <- purrr::pluck(tbl, 1, "fwf", 1) # Get positions
   
   if (file_exists(path)) {
     tryCatch({
@@ -103,6 +117,7 @@ walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
       data_lines <- lines[(sep_line + 1):length(lines)]
       
       # Read the data
+
       df <- read_fwf(I(data_lines), col_positions = layout, col_types = cols(.default = "c")) # No warnings but won't process JANFY2025_compare_file_sizes.log and JANFY2025_detailed_log.log - These have different formats. JANFY2025_compare_file_sizes.log was not considered necessary so we'll only read JANFY2025_detailed_log.log
       
       # Replace * for NA
