@@ -11,7 +11,7 @@ library(fs)
 input_dir <- "outputs"
 
 output_dir <- "outputs/mig_LIONS"
-fs::dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+fs::dir_create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 # 1. List setups
 ## 1.1. List of Immigration Status - Update as needed. Keep the following format for correct filtering "8 U.S.C. § 1306(a)"  
