@@ -189,7 +189,7 @@ write_csv(mig_lions_data, paste0(output_dir, "/mig_lions_data.csv"))
 # Variables to subset
 
 #gs_part_count <- c("UNIQUEID", 
-                      "PROG_CAT")
+#                      "PROG_CAT")
 
 # Read and subset
 #gs_part_count <- read_and_subset(paste0(input_dir, "/gs_part_count.feather"), "DISTRICT", "ID", gs_part_count)
@@ -197,8 +197,8 @@ write_csv(mig_lions_data, paste0(output_dir, "/mig_lions_data.csv"))
 ## 5.2 Join to mig_lions_data
 
 #mig_lions_data <- 
-  mig_lions_data |> 
-  left_join(gs_case_prog_cat , by = "UNIQUEID")
+#  mig_lions_data |> 
+#  left_join(gs_case_prog_cat , by = "UNIQUEID")
 
 
 
