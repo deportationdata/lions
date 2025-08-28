@@ -2,7 +2,7 @@ name: Create Migration LIONS Data
 
 on:
   workflow_run:
-    workflows: ["Download and release latest LIONS data "]
+    workflows: ["Download and release latest LIONS data"]
     types:
       - completed
 
@@ -46,30 +46,12 @@ jobs:
           
           if [ -n "$(git status --porcelain)" ]; then
             git add .gitattributes outputs/
-            git commit -m "Update data from ${{ matrix.script }} via LFS [skip ci]"
+            git commit -m "Update data via LFS [skip ci]"
             
             echo "Syncing with remote before push..."
             git pull --rebase origin main 
-            
-            for i in {1..5}; do
-              echo "Push attempt $i..." 
-              if git push; then
-                echo "Push successful on attempt $i"
-                break
-              else
-                echo "Push failed on attempt $i"
-                if [ $i -lt 5 ]; then
-                  wait_time=$((i * 10))  # Wait 10, 20, 30, 40 seconds
-                  echo "Waiting ${wait_time} seconds before retry..."
-                  sleep $wait_time
-                  echo "Syncing with remote before retry..."
-                  git pull --rebase origin main
-                else
-                  echo "All push attempts failed"
-                  exit 1
-                fi
-              fi
-            done
+
+            git push
           else
             echo "No changes to commit"
           fi
