@@ -13,7 +13,7 @@ library(fs)
 input_dir <- "outputs"
 
 output_dir <- "outputs/mig_LIONS"
-fs::dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+fs::dir_create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 # 0.1 Get immigration related cases
 
