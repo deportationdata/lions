@@ -6,6 +6,7 @@ library(arrow)
 library(tidylog)
 library(fs)       # To suppress messages
 library(tools)    # for file_path_sans_ext()
+library(purrr)
 
 # safer on CI (vroom multithreading can segfault on odd inputs)
 Sys.setenv(VROOM_NUM_THREADS = "1")
@@ -108,7 +109,7 @@ fwf_parse_lines <- function(lines, layout) {
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
 
 walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
-  layout <- tbl[["fwf"]][[1]]
+layout <- purrr::pluck(tbl, 1, "fwf", 1) # Get positions
   
   if (file_exists(path)) {
     tryCatch({
