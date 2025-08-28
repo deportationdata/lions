@@ -17,12 +17,12 @@ jobs:
 
       - uses: r-lib/actions/setup-renv@v2
 
-      - name: Download data
+      - name: Filtering cases
         run: |
           mkdir -p inputs
           Rscript scripts/filter_cases.R # This script creates a vector of UNIQUEIDs with any migration-related charge
      
-      - name: Deidentify PII 
+      - name: Create MIG_LIONS_DATA
         run: |
           mkdir -p inputs
           Rscript scripts/mig_lions_data.R # This script creates dataset of migration-related cases and variables 
