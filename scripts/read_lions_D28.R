@@ -15,14 +15,19 @@ Sys.setenv(VROOM_USE_ALTREP = "false")
 # Path to DISK28 directory
 disk28_path <- "inputs/unzipped/DISK28"
 
+# For local tests:
+#disk28_path <- "~/Library/CloudStorage/Box-Box/deportationdata/data/EOUSA/LIONS/DISK28"
+
 # Creating directory to save feather files
 output_dir <- "outputs"
+#output_dir <- "~/Dropbox/DDP/Tests" # For tests
 dir_create(output_dir, 
            recurse = TRUE)  # ensures it does not throw an error if the directory already exists
 
 # List .txt files
 disk28_files <- list.files(disk28_path, pattern = "\\.txt$", full.names = TRUE) |>
-  keep(~ basename(.x) != "global_LIONS.txt")
+  keep(~ !basename(.x) %in% c("global_LIONS.txt", "README.txt","JAN FY2025_README_REPORTS_LOGS.txt")) # Skipping ReadMe files with no table format 
+
 
 # Function: Detect fwf layout from full file lines
 detect_fwf_layout <- function(lines) {
@@ -85,11 +90,25 @@ layout_by_file <-
     .groups = "drop"
   )
 
+
+layout_by_file <- map_dfr(disk28_files, function(file_path) {
+  lines <- readLines(file_path, n = 200L, warn = FALSE)
+  fwf   <- detect_fwf_layout(lines)   # returns fwf_positions or NULL
+  if (is.null(fwf)) {
+    message("↷ No valid dashed header in: ", basename(file_path), " — skipping")
+    return(tibble())
+  }
+  tibble(
+    file_path = file_path,  # absolute path you read from
+    fwf       = list(fwf)   # keep original object; don't explode to columns
+  )
+})
+
 # Creating table to walk
 
 layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 
-#test_layout_tbl <- head(layout_tbl, 5) # For testing purposes, take only the first 5 entries
+#layout_tbl <- head(layout_tbl, 5) # For testing purposes, take only the first 5 entries
 
 
 fwf_parse_lines <- function(lines, layout) {
@@ -108,6 +127,10 @@ fwf_parse_lines <- function(lines, layout) {
 
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
 
+# Test
+#tbl <- layout_tbl
+#path <- names(layout_tbl)[1]
+
 walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
 layout <- purrr::pluck(tbl, 1, "fwf", 1) # Get positions
   
@@ -124,17 +147,17 @@ layout <- purrr::pluck(tbl, 1, "fwf", 1) # Get positions
       # }
       
       # Avoid encoding errors by guessing the encoding of the file
-      raw_bytes <- readr::read_lines_raw(path)
-      enc_guess <- readr::guess_encoding(raw_bytes) |>
-        arrange(desc(confidence)) |>
-        slice(1) |>
-        pull(encoding) |>                           # best encoding (or NA)
-        purrr::pluck(1) %||% "UTF-8"                  # fallback to UTF-8
-      
-      # Read the file as lines using identified encoding
-      con <- file(path, open = "r", encoding = enc_guess)
-      lines <- readLines(con, warn = FALSE)      # all lines as character vector
-      close(con)
+      # raw_bytes <- readr::read_lines_raw(path)
+      # enc_guess <- readr::guess_encoding(raw_bytes) |>
+      #   arrange(desc(confidence)) |>
+      #   slice(1) |>
+      #   pull(encoding) |>                           # best encoding (or NA)
+      #   purrr::pluck(1) %||% "UTF-8"                  # fallback to UTF-8
+      # 
+      # # Read the file as lines using identified encoding
+      # con <- file(path, open = "r", encoding = enc_guess)
+      # lines <- readLines(con, warn = FALSE)      # all lines as character vector
+      # close(con)
 
       lines <- str_replace_all(lines, "\r$", "")
     
@@ -144,14 +167,7 @@ layout <- purrr::pluck(tbl, 1, "fwf", 1) # Get positions
       # Extract header and data lines
       header <- lines[sep_line - 1]
       data_lines <- lines[(sep_line + 1L):length(lines)]
-      
-      # Read the data avoiding encoding errors
-      #df <- readr::read_fwf(
-       # file          = I(data_lines),                 # <- character input
-       # col_positions = layout,
-       # col_types     = readr::cols(.default = "c"),
-       # locale        = readr::locale(encoding = enc_guess)
-      #)
+    
                
       df <- fwf_parse_lines(data_lines, layout)
       
