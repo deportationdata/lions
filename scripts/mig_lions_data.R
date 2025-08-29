@@ -5,14 +5,16 @@ library(tidyverse)
 library(tidylog)
 library(arrow)
 library(purrr)
-library(rlang)
 library(fs)
 
 # Setup directories
 
 input_dir <- "outputs"
-
 output_dir <- "outputs/mig_LIONS"
+
+# For local tests
+#input_dir <- "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
+#output_dir <- "~/Dropbox/DDP/Tests"
 fs::dir_create(output_dir)
 
 # 0.1 Get immigration related cases
@@ -132,9 +134,30 @@ mig_lions_data <-
   mig_lions_data |> 
   left_join(gs_case , by = "UNIQUEID")
 
-
-# 3. Get GS_CASE_PROG_CAT  -------
+# 3. Gs_sentence -------
 ## 3.1 Run function to read, create UNIQUEID and subset
+
+### Variables to subset
+gs_sentence <- c("UNIQUEID",
+                  "FINE",
+                  "INCAR_DAYS",
+                  "INCAR_MONTHS",
+                  "INCAR_TYPE",
+                  "INCAR_YEARS")
+
+### Read and subset
+
+gs_sentence <- read_and_subset(paste0(input_dir, "/gs_sentence.feather"), "DISTRICT", "CASEID", gs_sentence)
+
+## 3.2 Join to mig_lions_data
+
+mig_lions_data <- 
+  mig_lions_data |> 
+  left_join(gs_sentence , by = "UNIQUEID")
+
+
+# 4. Get gs_case_prog_cat  -------
+## 4.1 Run function to read, create UNIQUEID and subset
 
 # Variables to subset
 
@@ -144,18 +167,58 @@ gs_case_prog_cat <- c("UNIQUEID",
 # Read and subset
 gs_case_prog_cat <- read_and_subset(paste0(input_dir, "/gs_case_prog_cat.feather"), "DISTRICT", "ID", gs_case_prog_cat)
 
-## 3.2 Join to mig_lions_data
+## 4.2 Join to mig_lions_data
 
 mig_lions_data <- 
   mig_lions_data |> 
   left_join(gs_case_prog_cat , by = "UNIQUEID")
 
-# 4. Get CASELIST  -------
+# 5. Get list of charges  -------
 
 mig_lions_data <- 
   mig_lions_data |> 
   left_join(mig_cases , by = "UNIQUEID") # Adding charge list and number of participants per case
   
+# 6. Get gs_count  -------
+## 6.1 Run function to read, create UNIQUEID and subset
+
+# Variables to subset
+
+gs_count <- c("UNIQUEID",
+                      "CRTHISID",
+                      "INSTID",
+                      "PENT_PROV")
+
+# Read and subset
+gs_count <- read_and_subset(paste0(input_dir, "/gs_count.feather"), "DISTRICT", "CASEID", gs_count)
+
+## 6.2 Join to mig_lions_data
+
+mig_lions_data <- 
+  mig_lions_data |> 
+  left_join(gs_count , by = "UNIQUEID")
+
+# 7. Get gs_court_hist -------
+## 7.1 Run function to read, create UNIQUEID and subset
+
+# Variables to subset
+
+gs_court_hist <- c("UNIQUEID",
+                   "ID",
+                   "DISPOSITION",
+                   "DISP_REASON1",
+                   "DISP_REASON2",
+                   "DISP_REASON3",
+                   "DISP_DATE")
+
+# Read and subset
+gs_court_hist <- read_and_subset(paste0(input_dir, "/gs_court_hist.feather"), "DISTRICT", "CASEID", gs_court_hist)
+
+## 7.2 Join to mig_lions_data
+
+mig_lions_data <- 
+  mig_lions_data |> 
+  left_join(gs_court_hist , by = "UNIQUEID")
 
 # 5. Reviewing missingess  -------
 
@@ -175,31 +238,14 @@ missing_summary <- mig_lions_data |>
 
 write_csv(mig_lions_data, paste0(output_dir, "/mig_lions_data.csv"))
 
+# TODO: 
+## Finish JUDGE_NAME, JUDGE_TYPE, NONMONETARY, CUSTODY_LOC, DETEN_REASON
+## Verify merges worked correctly. There seems to be an observation missmatch. Also check rows at the participant vs case level. 
+## Include cleaning from table_gs for various variables for easier analysis (e.g., judge name and type instead of the code)
+## Include data checking code
 
-
-
-# 5. Get GS_CASE_PROG_CAT  -------
-## 5.1 Run function to read, create UNIQUEID and subset
-# df <- arrow::read_feather(paste0(input_dir, "/gs_part_count.feather")) # Reading dataset
-# df2 <- arrow::read_feather(paste0(input_dir, "/gs_participant_AK.feather")) # Reading dataset
-
-
-# UNSURE HOW TO IDENTIFY INDIVIDUALS, participants and part_count have different individual ids (e.g. 1996R00119)
-
-# Variables to subset
-
-#gs_part_count <- c("UNIQUEID", 
-#                      "PROG_CAT")
-
-# Read and subset
-#gs_part_count <- read_and_subset(paste0(input_dir, "/gs_part_count.feather"), "DISTRICT", "ID", gs_part_count)
-
-## 5.2 Join to mig_lions_data
-
-#mig_lions_data <- 
-#  mig_lions_data |> 
-#  left_join(gs_case_prog_cat , by = "UNIQUEID")
-
+# file_path <- paste0(input_dir, "/gs_court_hist.feather")
+# df <- arrow::read_feather(file_path) # Reading dataset
 
 
 
