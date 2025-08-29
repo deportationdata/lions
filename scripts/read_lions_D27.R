@@ -17,14 +17,14 @@ library(arrow) # To handle feather
 disk27_path <- "inputs/unzipped/DISK27"
 
 # For local tests:
-# disk27_path <- "~/Library/CloudStorage/Box-Box/deportationdata/data/EOUSA/LIONS/DISK27"
+#disk27_path <- "~/Library/CloudStorage/Box-Box/deportationdata/data/EOUSA/LIONS/DISK27"
 
 # Find all .log files
 disk27_files <- list.files(disk27_path, pattern = "\\.log$", full.names = TRUE)
 disk27_filtered <- disk27_files[!str_detect(disk27_files, "_(compare_file_sizes|detailed_log)\\.log$")] # dropping files with a different format - we will read _detailed_log below
 
 ## TEST 
-# file_path <- disk27_filtered[1] # For testing
+file_path <- disk27_filtered[1] # For testing
 
 # Function to detect fwf positions using dash line
 detect_fwf_positions <- function(file_path) {
@@ -52,43 +52,47 @@ detect_fwf_positions <- function(file_path) {
   fwf_positions(start = starts, end = starts + widths - 1, col_names = col_names)
 }
 
-# Create layout table for DISK27
-layout_disk27 <- map_dfr(disk27_filtered, function(file_path) {
-  col_positions <- detect_fwf_positions(file_path)
-  
-  tibble(
-    disk = "DISK27",
-    table = str_remove(basename(file_path), "\\.log$"),
-    col_names = col_positions$col_names,
-    begin = col_positions$begin + 1, # Adjusting so fwf_positions won't get negative positions 
-    end = col_positions$end,
-    file = basename(file_path),
-    is_lookup_table = FALSE
-  )
-})
+# # Create layout table for DISK27
+# layout_disk27 <- map_dfr(disk27_filtered, function(file_path) {
+#   col_positions <- detect_fwf_positions(file_path)
+#   
+#   tibble(
+#     disk = "DISK27",
+#     table = str_remove(basename(file_path), "\\.log$"),
+#     col_names = col_positions$col_names,
+#     begin = col_positions$begin + 1, # Adjusting so fwf_positions won't get negative positions 
+#     end = col_positions$end,
+#     file = basename(file_path),
+#     is_lookup_table = FALSE
+#   )
+# })
+# 
+# # Group into file-specific specs
+# layout_by_file <- layout_disk27 |> 
+#   group_by(file_path = file.path("inputs/unzipped", disk, file)) |> 
+#   summarise(
+#     fwf = list(fwf_positions(begin, end, col_names)),
+#     .groups = "drop"
+#   )
 
-# Group into file-specific specs
-layout_by_file <- layout_disk27 |> 
-  group_by(file_path = file.path("inputs/unzipped", disk, file)) |> 
-  summarise(
-    fwf = list(fwf_positions(begin, end, col_names)),
-    .groups = "drop"
-  )
+layout_by_file <- tibble(file_path = disk27_filtered) |>
+  mutate(fwf = map(file_path, detect_fwf_positions))
+
 
 # Split into a list of file-specific layouts
 layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 
 # Directory to save intermediate feather files
 output_dir <-  "outputs"
-# output_dir <- "~/Dropbox/DDP/Tests" # For tests
+#output_dir <- "~/Dropbox/DDP/Tests" # For tests
 dir_create(output_dir)
 
 
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
 
 # Test
-# tbl <- layout_tbl
-# path <- names(layout_tbl)[1]
+#tbl <- layout_tbl
+#path <- names(layout_tbl)[1]
 
 walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
   
