@@ -13,8 +13,8 @@ input_dir <- "outputs"
 output_dir <- "outputs/mig_LIONS"
 
 # For local tests
-#input_dir <- "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
-#output_dir <- "~/Dropbox/DDP/Tests"
+input_dir <- "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
+output_dir <- "~/Dropbox/DDP/Tests"
 fs::dir_create(output_dir)
 
 # 0.1 Get immigration related cases
@@ -202,23 +202,23 @@ mig_lions_data <-
 ## 7.1 Run function to read, create UNIQUEID and subset
 
 # Variables to subset
-
-gs_court_hist <- c("UNIQUEID",
-                   "ID",
-                   "DISPOSITION",
-                   "DISP_REASON1",
-                   "DISP_REASON2",
-                   "DISP_REASON3",
-                   "DISP_DATE")
-
-# Read and subset
-gs_court_hist <- read_and_subset(paste0(input_dir, "/gs_court_hist.feather"), "DISTRICT", "CASEID", gs_court_hist)
-
-## 7.2 Join to mig_lions_data
-
-mig_lions_data <- 
-  mig_lions_data |> 
-  left_join(gs_court_hist , by = "UNIQUEID")
+# 
+# gs_court_hist <- c("UNIQUEID",
+#                    "ID",
+#                    "DISPOSITION",
+#                    "DISP_REASON1",
+#                    "DISP_REASON2",
+#                    "DISP_REASON3",
+#                    "DISP_DATE")
+# 
+# # Read and subset
+# gs_court_hist <- read_and_subset(paste0(input_dir, "/gs_court_hist.feather"), "DISTRICT", "CASEID", gs_court_hist)
+# 
+# ## 7.2 Join to mig_lions_data
+# 
+# mig_lions_data <- 
+#   mig_lions_data |> 
+#   left_join(gs_court_hist , by = "UNIQUEID")
 
 # 5. Reviewing missingess  -------
 
