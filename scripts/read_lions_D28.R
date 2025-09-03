@@ -39,17 +39,17 @@ detect_fwf_layout <- function(lines) {
   
   spans <- str_locate_all(dash_line, "-+")[[1]]
   if (is.null(spans) || nrow(spans) == 0) return(NULL)
-
+  
   starts <- spans[, 1]
   ends   <- spans[, 2]
   
   col_names <- map2_chr(starts, ends, ~ str_trim(str_sub(header_line, .x, .y)))
-
+  
   # Marking columns that are not empty
   keep_cols <- nzchar(col_names) 
   # Check if we detected any non-empty column names. If not, bail out and return NULL
   if (!any(keep_cols)) return(NULL)
-
+  
   fwf_positions(start = starts[keep_cols], end = ends[keep_cols], col_names = col_names[keep_cols])
 }
 
@@ -81,15 +81,6 @@ if (nrow(layout_disk28) == 0L) {
   quit(save = "no", status = 0)
 }
 
-# Create a list of file paths for each disk and file
-layout_by_file <- 
-  layout_disk28 |>
-  group_by(file_path = file.path("inputs/unzipped", disk, file)) |>
-  summarise(
-    fwf = list(fwf_positions(begin, end, col_names)), # This runs fwf_positions a second time -- it was already run in detect_fwf_layout called in layout_disk28 - so it screws up the layout and makes it start at -1
-    .groups = "drop"
-  )
-
 
 layout_by_file <- map_dfr(disk28_files, function(file_path) {
   lines <- readLines(file_path, n = 200L, warn = FALSE)
@@ -99,8 +90,8 @@ layout_by_file <- map_dfr(disk28_files, function(file_path) {
     return(tibble())
   }
   tibble(
-    file_path = file_path,  # absolute path you read from
-    fwf       = list(fwf)   # keep original object; don't explode to columns
+    file_path = file_path,
+    fwf       = list(fwf)
   )
 })
 
@@ -113,16 +104,14 @@ layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 
 fwf_parse_lines <- function(lines, layout) {
   if (length(lines) == 0) return(tibble())
-  starts <- layout$begin
+  starts <- layout$begin %||% layout$start
   ends   <- layout$end
   cols   <- layout$col_names
-  # build a tibble column-by-column with str_sub; trim right spaces
-  out <- map2(starts, ends, \(s, e) str_sub(lines, s, e) |> str_replace("\\s+$", "")) |>
-    set_names(cols) |>
+  if (is.null(starts) || is.null(ends) || length(starts) == 0) return(tibble())
+  purrr::map2(starts, ends, \(s, e) stringr::str_sub(lines, s, e) |> stringr::str_replace("\\s+$", "")) |>
+    rlang::set_names(cols) |>
     tibble::as_tibble(.name_repair = "minimal")
-  out
 }
-
 
 
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
@@ -132,7 +121,8 @@ fwf_parse_lines <- function(lines, layout) {
 #path <- names(layout_tbl)[1]
 
 walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
-layout <- purrr::pluck(tbl, 1, "fwf", 1) # Get positions
+
+  layout <- tbl$fwf[[1]] # Get positions
   
   if (file_exists(path)) {
     tryCatch({
@@ -159,16 +149,16 @@ layout <- purrr::pluck(tbl, 1, "fwf", 1) # Get positions
       # lines <- readLines(con, warn = FALSE)      # all lines as character vector
       # close(con)
 
-      lines <- str_replace_all(lines, "\r$", "")
-    
+      lines <- readLines(path, warn = FALSE)
+      
       # Find the line index that contains only dashes (separator line)
       sep_line <- stringr::str_which(lines, "^[\\-–—]{3,}.*$")[1]
       
       # Extract header and data lines
       header <- lines[sep_line - 1]
       data_lines <- lines[(sep_line + 1L):length(lines)]
-    
-               
+      
+      
       df <- fwf_parse_lines(data_lines, layout)
       
       write_feather(df, feather_path)
