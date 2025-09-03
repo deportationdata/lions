@@ -17,7 +17,7 @@ library(arrow) # To handle feather
 disk27_path <- "inputs/unzipped/DISK27"
 
 # For local tests:
-disk27_path <- "~/Library/CloudStorage/Box-Box/deportationdata/data/EOUSA/LIONS/DISK27"
+#disk27_path <- "~/Library/CloudStorage/Box-Box/deportationdata/data/EOUSA/LIONS/DISK27"
 
 # Find all .log files
 disk27_files <- list.files(disk27_path, pattern = "\\.log$", full.names = TRUE)
@@ -68,81 +68,130 @@ layout_disk27 <- map_dfr(disk27_filtered, function(file_path) {
 })
 
 # Group into file-specific specs
-layout_by_file <- layout_disk27 |>
-  group_by(file_path = file.path("~/Library/CloudStorage/Box-Box/deportationdata/data/EOUSA/LIONS", disk, file)) |>
-  summarise(
-    fwf = list(fwf_positions(begin, end, col_names)),
-    .groups = "drop"
-  )
 
-# layout_by_file <- tibble(file_path = disk27_filtered) |>
-#   mutate(fwf = map(file_path, detect_fwf_positions))
-
-
-# Split into a list of file-specific layouts
-layout_tbl <- split(layout_by_file, layout_by_file$file_path)
+layout_by_file <- tibble(file_path = disk27_filtered) |>
+  mutate(fwf = purrr::map(file_path, detect_fwf_positions))
 
 # Directory to save intermediate feather files
 output_dir <-  "outputs"
-output_dir <- "~/Dropbox/DDP/Tests" # For tests
+#output_dir <- "~/Dropbox/DDP/Tests" # For tests
 dir_create(output_dir)
 
+# Read each file, parse it using the detected layout, and save as feather
+
+purrr::walk2(layout_by_file$fwf, layout_by_file$file_path, function(layout, path) {
+  if (!fs::file_exists(path)) {
+    message("⚠ File not found: ", path)
+    return(invisible(NULL))
+  }
+  
+  tryCatch({
+    base_name <- tools::file_path_sans_ext(basename(path))
+    feather_path <- file.path(output_dir, paste0(base_name, ".feather"))
+    
+    # Read & normalize lines
+    lines <- readLines(path, warn = FALSE)
+    lines <- sub("\r$", "", lines)          
+    
+    # Find dashed separator
+    sep_idx <- stringr::str_which(lines, "^-{2,}")[1]
+    if (is.na(sep_idx) || sep_idx >= length(lines)) {
+      message("✘ No dash separator or no data lines: ", path)
+      return(invisible(NULL))
+    }
+    
+    # Data lines (trim right, drop empties)
+    data_lines <- lines[(sep_idx + 1):length(lines)]
+    data_lines <- sub("\\s+$", "", data_lines)
+    data_lines <- data_lines[nzchar(data_lines)]
+    if (length(data_lines) == 0) {
+      message("✘ Empty data section after separator: ", path)
+      return(invisible(NULL))
+    }
+    
+    # Parse using the single, precomputed spec
+    df <- readr::read_fwf(
+      I(data_lines),
+      col_positions = layout,
+      col_types = readr::cols(.default = "c")
+    ) |>
+      dplyr::mutate(dplyr::across(dplyr::everything(), ~ dplyr::na_if(.x, "*")))
+    
+    # Sanity checks before writing
+    if (nrow(df) == 0) {
+      message("✘ Parsed 0 rows: ", path, " (spec misalignment likely)")
+      return(invisible(NULL))
+    }
+    
+    # Replace dplyr::if_all with a base-R check:
+    all_empty <- all(vapply(df, function(x) all(is.na(x) | x == ""), logical(1)))
+    if (all_empty) {
+      message("✘ All columns empty: ", path, " (check spec)")
+      return(invisible(NULL))
+    }
+    
+    arrow::write_feather(df, feather_path)
+    message("✔ Saved: ", feather_path)
+  }, error = function(e) {
+    message("✘ Error processing: ", path, " — ", e$message)
+  })
+})
 
 # Loop through each table and read the corresponding .txt file, then save it as a feather file
 
 # Test
-#tbl <- layout_tbl
-#path <- names(layout_tbl)[1]
-
-walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
-  
-  layout <- purrr::pluck(tbl, 1, "fwf", 1) # Get positions
-  
-  if (file_exists(path)) {
-    tryCatch({
-      
-      # Extract the base name to save it
-      base_name <- file_path_sans_ext(basename(path))
-      feather_path <- file.path(output_dir, paste0(base_name, ".feather"))
-      
-      # if (file.exists(feather_path)) { # Including this skip to face crashes while running the code - If it crashes, it will not try to read files that were already read
-      #  message("Skipping (already exists): ", base_name)
-      #  return(invisible(NULL))
-      # }
-      
-      # Read the file as lines
-      lines <- readLines(path)
-      
-      # Find the line index that contains only dashes (separator line)
-      sep_line <- str_which(lines, "^-{2,}")[1]
-      
-      # Extract header and data lines
-      header <- lines[sep_line - 1]
-      data_lines <- lines[(sep_line + 1):length(lines)]
-      
-      # Read the data
-
-      df <- read_fwf(I(data_lines), col_positions = layout, col_types = cols(.default = "c")) # No warnings but won't process JANFY2025_compare_file_sizes.log and JANFY2025_detailed_log.log - These have different formats. JANFY2025_compare_file_sizes.log was not considered necessary so we'll only read JANFY2025_detailed_log.log
-      
-      # Replace * for NA
-      df <- df |> 
-        mutate(across(everything(), ~na_if(.x, "*")))
-      
-      write_feather(df, feather_path)
-      
-      message("✔ Saved: ", feather_path)
-    }, error = function(e) {
-      message("✘ Error processing: ", path, " — ", e$message)
-    })
-  } else {
-    message("⚠ File not found: ", path)
-  }
-})
-
-### Read JANFY2025_detailed_log.log that has a different format
+# tbl <- layout_tbl
+# path <- names(layout_tbl)[1]
+# 
+# walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
+#   
+#   layout <- purrr::pluck(tbl, 1, "fwf", 1) # Get positions
+#   
+#   if (file_exists(path)) {
+#     tryCatch({
+#       
+#       # Extract the base name to save it
+#       base_name <- file_path_sans_ext(basename(path))
+#       feather_path <- file.path(output_dir, paste0(base_name, ".feather"))
+#       
+#       # if (file.exists(feather_path)) { # Including this skip to face crashes while running the code - If it crashes, it will not try to read files that were already read
+#       #  message("Skipping (already exists): ", base_name)
+#       #  return(invisible(NULL))
+#       # }
+#       
+#       # Read the file as lines
+#       lines <- readLines(path)
+#       
+#       # Find the line index that contains only dashes (separator line)
+#       sep_line <- str_which(lines, "^-{2,}")[1]
+#       
+#       # Extract header and data lines
+#       header <- lines[sep_line - 1]
+#       data_lines <- lines[(sep_line + 1):length(lines)]
+#       
+#       # Read the data
+# 
+#       df <- read_fwf(I(data_lines), col_positions = layout, col_types = cols(.default = "c")) # No warnings but won't process JANFY2025_compare_file_sizes.log and JANFY2025_detailed_log.log - These have different formats. JANFY2025_compare_file_sizes.log was not considered necessary so we'll only read JANFY2025_detailed_log.log
+#       
+#       # Replace * for NA
+#       df <- df |> 
+#         mutate(across(everything(), ~na_if(.x, "*")))
+#       
+#       write_feather(df, feather_path)
+#       
+#       message("✔ Saved: ", feather_path)
+#     }, error = function(e) {
+#       message("✘ Error processing: ", path, " — ", e$message)
+#     })
+#   } else {
+#     message("⚠ File not found: ", path)
+#   }
+# })
+# 
+### Read JANFY2025_detailed_log that has a different format
 
 # Read in the lines from the log file
-detailed_log  <- str_subset(disk27_files, "_detailed_log") # Get path of the detailed log file 
+detailed_log  <- str_subset(disk27_files, "_detailed_log") # Get path of the detailed log file
 lines <- readLines(detailed_log) # Read the log
 
 # Find indices of lines indicating table blocks
@@ -156,23 +205,23 @@ list1 <- map_dfr(table_starts, function(i) {
   # Get the relevant lines by searching ahead
   end_idx <- table_ends[table_ends > i][1]
   if (is.na(end_idx)) return(tibble())  # Skip if no end found
-  
+
   block <- lines[(i + 1):(end_idx - 1)] # Block of information - each block is a table
-  
+
   imported_line <- block[str_detect(block, "Number of records imported:")]
   deleted_line  <- block[str_detect(block, "Marked and sealed civil records deleted:")]
   written_line  <- block[str_detect(block, "Number of records written to file:")]
-  
+
   # Extract values
   table   <- str_match(lines[i], "Table name\\s+[–-]\\s+(GS_[A-Z0-9_]+)")[,2]
   imported <- as.integer(str_extract(imported_line, "-?\\d+"))
   deleted  <- as.integer(str_extract(deleted_line, "-?\\d+"))
   written  <- as.integer(str_extract(written_line, "-?\\d+"))
-  
+
   tibble(table, imported, deleted, written)
 })
 
-list1 <- list1 |> 
+list1 <- list1 |>
   mutate(
     district = NA_character_,  # Initialize district as NA to bind later
   )
@@ -183,42 +232,42 @@ list1 <- list1 |>
 list2 <- map_dfr(table_starts, function(start_idx) {
    end_idx <- table_ends[table_ends > start_idx][1]
   if (is.na(end_idx)) return(tibble())  # skip if no end
-  
+
   block <- lines[(start_idx + 1):(end_idx - 1)]
-  
+
   # Extract table name from the start line (make sure it works even with weird dash characters)
   parent_table <- str_match(
     lines[start_idx],
     "Table name\\s+(–|-|—)\\s+(GS_[A-Z0-9_]+)"
   )[,3]
-  
+
   # Extract imported/deleted using safe match
   imported <- block %>%
     str_subset("Number of records imported:") %>%
     str_extract("[0-9,]+") %>%
     str_remove_all(",") %>%
     as.integer()
-  
+
   deleted <- block %>%
     str_subset("Marked and sealed civil records deleted:") %>%
     str_extract("-?[0-9,]+") %>%
     str_remove_all(",") %>%
     as.integer()
-  
+
   # Extract region-level records
   regional_lines <- str_subset(block, "Number of records written to file GS_")
-  
+
   regional_matches <- str_match(
     regional_lines,
     "Number of records written to file (GS_[A-Z0-9_]+) \\(([A-Z]+)\\)\\s*:\\s*(-?[0-9,]+)"
   )
-  
+
   # Filter out empty matches
   regional_matches <- regional_matches[!is.na(regional_matches[,1]), , drop = FALSE]
-  
+
   # If none, return empty tibble
   if (nrow(regional_matches) == 0) return(tibble())
-  
+
   # Build tibble
   tibble(
     table = regional_matches[, 2],
@@ -233,6 +282,6 @@ list2 <- map_dfr(table_starts, function(start_idx) {
 
 base_name <- file_path_sans_ext(basename(detailed_log)) # Get name of file
 
-final <- rbind(list1, list2) |> 
+final <- rbind(list1, list2) |>
  write_feather(file.path(output_dir, paste0(base_name, ".feather"))) # Saving detailed logas feather file
 
