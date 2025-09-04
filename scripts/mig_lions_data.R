@@ -223,6 +223,8 @@ gs_court_hist <- gs_court_hist |>
     DISPOSITION   = paste(unique(na.omit(DISPOSITION)), collapse = ", "),
     DISP_REASON1  = paste(unique(na.omit(DISP_REASON1)), collapse = ", "),
     DISP_REASON2  = paste(unique(na.omit(DISP_REASON2)), collapse = ", "),
+    DISP_REASON3  = paste(unique(na.omit(DISP_REASON3)), collapse = ", "),
+    DISP_DATE  = paste(unique(na.omit(DISP_DATE)), collapse = ", "),
     .groups = "drop"
   )
 
@@ -232,7 +234,24 @@ mig_lions_data <-
   mig_lions_data |>
   left_join(gs_court_hist , by = "UNIQUEID")
 
-# 5. Reviewing missingness  -------
+# 8. Get gs_relief -------
+## 8.1 Run function to read, create UNIQUEID and subset
+
+# Variables to subset
+
+#gs_relief <- c("UNIQUEID",
+                   "ID",
+                   "DISPOSITION",
+                   "DISP_REASON1",
+                   "DISP_REASON2",
+                   "DISP_REASON3",
+                   "DISP_DATE")
+
+# Read and subset
+
+#gs_relief <- read_feather(paste0(input_dir, "/gs_court_hist.feather"))
+#gs_relief <- read_and_subset(paste0(input_dir, "/gs_relief.feather"), "DISTRICT", "CASEID", gs_court_hist)
+# . Reviewing missingness  -------
 
 missing_summary <- mig_lions_data |> 
   summarise(across(
