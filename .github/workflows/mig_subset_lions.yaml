@@ -7,8 +7,8 @@ on:
       - completed
   push:
     paths:
-      - 'scripts/mig_lions_data.R'
-      - 'scripts/filter_cases.R'  # You might want this too since it's also used
+      - 'scripts/immigration_filter_cases.R'  # You might want this too since it's also used
+      - 'scripts/immigration_data_construction.R'
 
 
 permissions:

@@ -269,7 +269,7 @@ missing_summary <- mig_lions_data |>
 
 # 6. Save final dataset -----
 
-arrow::write_feather(mig_lions_data, paste0(output_dir, "/immigration_defendant_level.feather"), compression = "zstd")
+arrow::write_feather(mig_lions_data, paste0(output_dir, "/immigration_defendant_level.feather"))
 
 # TODO: 
 ## Finish JUDGE_NAME, JUDGE_TYPE, NONMONETARY, CUSTODY_LOC, DETEN_REASON
