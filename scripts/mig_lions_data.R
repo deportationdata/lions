@@ -240,12 +240,12 @@ mig_lions_data <-
 # Variables to subset
 
 #gs_relief <- c("UNIQUEID",
-                   "ID",
-                   "DISPOSITION",
-                   "DISP_REASON1",
-                   "DISP_REASON2",
-                   "DISP_REASON3",
-                   "DISP_DATE")
+#                   "ID",
+#                   "DISPOSITION",
+#                   "DISP_REASON1",
+#                   "DISP_REASON2",
+#                   "DISP_REASON3",
+#                   "DISP_DATE")
 
 # Read and subset
 
@@ -267,7 +267,7 @@ missing_summary <- mig_lions_data |>
 
 # 6. Save final dataset -----
 
-write_csv(mig_lions_data, paste0(output_dir, "/mig_lions_data.csv"))
+write_csv(mig_lions_data, paste0(output_dir, "/mig_lions_data.feather"))
 
 # TODO: 
 ## Finish JUDGE_NAME, JUDGE_TYPE, NONMONETARY, CUSTODY_LOC, DETEN_REASON
