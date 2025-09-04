@@ -5,6 +5,11 @@ on:
     workflows: ["Download and release latest LIONS data"]
     types:
       - completed
+  push:
+    paths:
+      - 'scripts/mig_lions_data.R'
+      - 'scripts/filter_cases.R'  # You might want this too since it's also used
+
 
 permissions:
   contents: write
