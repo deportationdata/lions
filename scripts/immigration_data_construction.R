@@ -135,6 +135,8 @@ mig_lions_data <-
   mig_lions_data |> 
   left_join(gs_case , by = "UNIQUEID") # TODO: pls fix spacing - extra space before , - and similar throughout document
 
+# TODO: pls add rm(dataset) and gc() at each step after data is no longer needed for speed and memory management
+
 # 3. Gs_sentence -------
 ## 3.1 Run function to read, create UNIQUEID and subset
 
