@@ -96,9 +96,9 @@ read_and_subset <- function(file_path, district_col, caseid_col, vars) {
     stop("Specified columns do not exist in the data frame")
   }
   
-  df  <- df |> # Creating uniqueid
-    mutate(UNIQUEID = paste0(.data[[district_col]], .data[[caseid_col]])) |> 
-    select(UNIQUEID, everything())
+  df  <- df |> # Creating uniqueid # TODO: pls fix spacing here - df on new line and no two spaces after df
+    mutate(UNIQUEID = paste0(.data[[district_col]], .data[[caseid_col]])) |> # TODO: pls use str_c and I would use the embrace operator {{ }} here not .data see https://rlang.r-lib.org/reference/args_data_masking.html
+    select(UNIQUEID, everything()) # TODO: is this to reorder? suggest using the options in mutate like .before instead
   
   df <- df |> select(all_of(vars)) # Select variables
   
@@ -133,7 +133,7 @@ gs_case <-
 
 mig_lions_data <- 
   mig_lions_data |> 
-  left_join(gs_case , by = "UNIQUEID")
+  left_join(gs_case , by = "UNIQUEID") # TODO: pls fix spacing - extra space before , - and similar throughout document
 
 # 3. Gs_sentence -------
 ## 3.1 Run function to read, create UNIQUEID and subset
@@ -186,7 +186,7 @@ mig_lions_data <-
 # Variables to subset
 
 gs_count <- c("UNIQUEID",
-                      "CRTHISID",
+                      "CRTHISID", # TODO: pls fix indentation here
                       "INSTID",
                       "PENT_PROV")
 
