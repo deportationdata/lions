@@ -17,6 +17,8 @@ permissions:
 jobs:
   immigration-subset:
     runs-on: large-runner
+    # run only if the triggering workflow succeeded or if triggered via push of relevant scripts
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'push' }} 
 
     steps:
       - uses: actions/checkout@v4
