@@ -38,13 +38,13 @@ jobs:
         # This script creates a vector of UNIQUEIDs with any migration-related charge
         run: |
           mkdir -p inputs
-          Rscript scripts/filter_cases.R 
+          Rscript scripts/immigration_filter_cases.R 
      
       - name: Create MIG_LIONS_DATA
         # This script creates dataset of migration-related cases and variables 
         run: |
           mkdir -p inputs
-          Rscript scripts/mig_lions_data.R
+          Rscript scripts/immigration_filter_cases.R
           
       - name: Commit data files with proactive sync and retry
         run: |

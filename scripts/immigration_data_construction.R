@@ -14,7 +14,7 @@ output_dir <- "outputs/mig_LIONS"
 
 # For local tests
 
-#input_dir <- "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
+#input_dir <- "~/Library /CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
 #output_dir <- "~/Dropbox/DDP/Tests"
 fs::dir_create(output_dir)
 
