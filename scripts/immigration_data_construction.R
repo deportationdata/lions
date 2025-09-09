@@ -6,6 +6,7 @@ library(tidylog)
 library(arrow)
 library(purrr)
 library(fs)
+install.packages("validate")
 library(validate) # For data checking code
 
 # Setup directories
