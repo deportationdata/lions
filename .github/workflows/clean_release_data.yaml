@@ -3,11 +3,13 @@ name: "Download and release latest LIONS data"
 on:
   push:
     paths:
+      - '.github/workflows/clean_release_data.yaml'
       - 'scripts/download_lions.R'
       - 'scripts/read_lions.R'
       - 'scripts/read_lions_D27.R'
       - 'scripts/read_lions_D28.R'
       - 'scripts/deidentifying.R'
+    
 
 permissions:
   contents: write
@@ -43,7 +45,7 @@ jobs:
           printf 'LATEST_MONTH_NAME=[%s]\n' "${LATEST_MONTH_NAME}"
           
       - name: Unzip data
-        # if: env.SHOULD_RUN == 'true' # Written in the checker of 'Download data' scripts/download_lions.R
+        if: env.SHOULD_RUN == 'true' # Written in the checker of 'Download data' scripts/download_lions.R
         run: |
           mkdir -p inputs/unzipped
 
@@ -56,7 +58,7 @@ jobs:
           done
 
       - name: Process data
-        # if: env.SHOULD_RUN == 'true'
+        if: env.SHOULD_RUN == 'true'
         run: |
           mkdir -p outputs
           Rscript scripts/read_lions.R
@@ -64,11 +66,13 @@ jobs:
           Rscript scripts/read_lions_D28.R
 
       - name: Deidentify PII 
+        if: env.SHOULD_RUN == 'true'
         run: |
           mkdir -p outputs
           Rscript scripts/deidentifying.R  # This script redacts pii   
           
       - name: Commit data files with proactive sync and retry
+        if: env.SHOULD_RUN == 'true'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
