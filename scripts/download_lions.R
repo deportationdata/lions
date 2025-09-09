@@ -157,3 +157,7 @@ walk2(zip_urls, dests, \(url, path) {
 })
   
 message("All downloads completed into ./inputs")
+
+# Save tag of latest release for future checker
+
+write_lines(latest_tag,"outputs/latest.txt")
