@@ -3,11 +3,13 @@ name: "Download and release latest LIONS data"
 on:
   push:
     paths:
+     - '.github/workflows/clean_release_data.yaml'
       - 'scripts/download_lions.R'
       - 'scripts/read_lions.R'
       - 'scripts/read_lions_D27.R'
       - 'scripts/read_lions_D28.R'
       - 'scripts/deidentifying.R'
+    
 
 permissions:
   contents: write
