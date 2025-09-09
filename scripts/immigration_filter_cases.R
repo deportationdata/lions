@@ -167,7 +167,6 @@ collapsed <- gs_count |>
   group_by(UNIQUEID) |> 
   summarise(
     CHARGES_LIST = paste(unique(statute_code), collapse = ", "),
-    N_PARTICIPANTS = n(), # Create a variable to capture number of participants per case
     .groups = "drop"
   )
 

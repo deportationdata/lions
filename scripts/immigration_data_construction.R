@@ -6,7 +6,6 @@ library(tidylog)
 library(arrow)
 library(purrr)
 library(fs)
-install.packages("validate")
 library(validate) # For data checking code
 
 # Setup directories
@@ -16,8 +15,8 @@ output_dir <- "outputs/mig_LIONS"
 
 # For local tests
 
-#input_dir <- "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
-#output_dir <- "~/Dropbox/DDP/Tests"
+input_dir <- "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
+output_dir <- "~/Dropbox/DDP/Tests"
 fs::dir_create(output_dir)
 
 # 0.0 Helpers
@@ -44,6 +43,22 @@ confront_stop <- function(data, rules) { # rules = vector of rules create with v
     stop(msg, call. = FALSE)
   }}
 
+## Clean missings 
+
+clean_missings <- function(data) { 
+  data |> 
+    mutate(across(everything(), ~ {
+      x <- .
+      # Convert to character to test NAs safely, then restore class if needed
+      # 1) Trim whitespace; 2) blank -> NA; 3) common tokens -> NA
+      if (is.character(x)) {
+        x <- str_trim(x)
+        x[x == ""] <- NA_character_
+        x[tolower(x) %in% c("na","n/a","null",".")] <- NA_character_
+      }
+      x
+    }))
+}
 
 # 0.1 Get immigration related cases
 
@@ -113,18 +128,7 @@ mig_lions_data <-
 
 ## 1.5 Cleaning missingess
 
-mig_lions_data <- mig_lions_data |> 
-  mutate(across(everything(), ~ {
-    x <- .
-    # Convert to character to test NAs safely, then restore class if needed
-    # 1) Trim whitespace; 2) blank -> NA; 3) common tokens -> NA
-    if (is.character(x)) {
-      x <- str_trim(x)
-      x[x == ""] <- NA_character_
-      x[tolower(x) %in% c("na","n/a","null",".")] <- NA_character_
-    }
-    x
-  }))
+mig_lions_data <- clean_missings(mig_lions_data)
 
 ## Checking the binding
  # Set of rules to validate
@@ -151,8 +155,11 @@ mig_lions_data <- mig_lions_data |>
  # Run helper function to check and stop if any rules are broken
  confront_stop(mig_lions_data, rules)
 
+ # TODO: KEEP ONLY DEFENDENTS
+ 
+ 
  # Clean up
- rm(list = setdiff(ls(), c("mig_lions_data", "mig_cases", "input_dir", "output_dir", "confront_stop"))) # Keeping only what's needed
+ rm(list = setdiff(ls(), c("mig_lions_data", "mig_cases", "input_dir", "output_dir", "confront_stop", "clean_missings"))) # Keeping only what's needed
  gc()
  
 # 2. Gs_case -------
@@ -161,21 +168,22 @@ mig_lions_data <- mig_lions_data |>
 
 read_and_subset <- function(file_path, district_col, caseid_col, vars) {
   
-  df <- arrow::read_feather(file_path) # Reading dataset
+  df <- 
+    arrow::read_feather(file_path) # Reading dataset
   
-  # Ensure the specified columns exist
-  if (!all(c(district_col, caseid_col) %in% colnames(df))) {
-    stop("Specified columns do not exist in the data frame")
-  }
-  
-  df  <- df |> # Creating uniqueid # TODO: pls fix spacing here - df on new line and no two spaces after df
-    mutate(UNIQUEID = paste0(.data[[district_col]], .data[[caseid_col]])) |> # TODO: pls use str_c and I would use the embrace operator {{ }} here not .data see https://rlang.r-lib.org/reference/args_data_masking.html
-    select(UNIQUEID, everything()) # TODO: is this to reorder? suggest using the options in mutate like .before instead
-  
-  df <- df |> select(all_of(vars)) # Select variables
+  df <- 
+    df |> 
+    mutate(
+      UNIQUEID = str_c({{ district_col }}, {{ caseid_col }}), # Creating uniqueid 
+      .before = everything() # Order
+    )
+
+  df <- 
+    df |> select(all_of(vars)) # Select variables defined in vars vector
   
   return(df)
 }
+ 
 ## 2.1 Run function to read, create UNIQUEID and subset
 
 # Variables to subset
@@ -190,7 +198,7 @@ gs_case_vars <- c("UNIQUEID",
                   "CLOSE_DATE")
 
 # Read and subset
-gs_case <- read_and_subset(paste0(input_dir, "/gs_case.feather"), "DISTRICT", "ID", gs_case_vars)
+gs_case <- read_and_subset(paste0(input_dir, "/gs_case.feather"), DISTRICT, ID, gs_case_vars)
 
 ## 2.2 Renaming for join
 
@@ -201,70 +209,183 @@ gs_case <-
     CASE_STATUS = STATUS
   )
 
-## 2.3 Join to mig_lions_data
+## 2.3 Safely join to mig_lions_data
 
+# Errors if no UNIQUEID in g_case appears in mig_lions_data
+n_matched <- nrow(semi_join(mig_lions_data, gs_case, by = "UNIQUEID")) # Identify whether there will be matches first
+if (n_matched == 0) stop("No rows matched on UNIQUEID.") # Will show an error if nothing matches
+
+# Check observations before join
+n_before <- nrow(mig_lions_data)
+
+# If it's safe to proceed
 mig_lions_data <- 
-  mig_lions_data |> 
-  left_join(gs_case, by = "UNIQUEID") 
+  left_join(mig_lions_data, gs_case, by = "UNIQUEID") # Matching
+
+# Check observations before join
+n_after  <- nrow(mig_lions_data) 
+
+# To confirm that we are getting the expected number of rows (Given this is a case-level dataset we should not be getting more rows)
+if (n_before != n_after) stop("Number of rows changed after join - Review merge") # Our number of observations pre and post join should be the same - Error if not
+
+## Checking the merge
+
+# Cleaning missingess
+
+mig_lions_data <- clean_missings(mig_lions_data)
+
+# Set of rules to validate
+rules <- validator(
+  CASE_STATUS_missing = mean(is.na(CASE_STATUS)) * 100 == 0, # CASE_STATUS should not be missing
+  LEAD_CHARGE_missing = mean(is.na(LEAD_CHARGE)) * 100 == 0, # LEAD_CHARGE should not be missing
+  BRANCH_missing = mean(is.na(BRANCH)) * 100 == 0, # BRANCH should not be missing
+  UNIT_all_missing = mean(is.na(UNIT)) * 100 < 100, # UNIT should not be all missing
+  CASE_TYPE_all_missing = mean(is.na(CASE_TYPE)) * 100 < 100, # CASE_TYPE should not be all missing
+  OFFENSE_FROM_all_missing = mean(is.na(OFFENSE_FROM )) * 100 < 100, # OFFENSE_FROM should not be all missing
+  CLOSE_DATE_all_missing = mean(is.na(CLOSE_DATE )) * 100 < 100, # CLOSE_DATE should not be all missing
+  date_discrepancy = in_range(mig_lions_data$CLOSE_DATE, min = as.Date("1996-01-01"), max = today()),
+  # No records before 1996 and not in the future to avoid potential date typos or errors
+  non_unique_rows = is_unique(UNIQUEID, ID), # UNIQUEID and ID should uniquely identify each row
+  n_participants_discrepancy = N_PARTICIPANTS == do_by(ID, by = UNIQUEID, fun = function(x) length(unique(x))) # Verify dataset is at participant-level - No more rows than participants 
+)
+
+# Run helper function to check and stop if any rules are broken
+confront_stop(mig_lions_data, rules)
 
 # Clean up
-rm(gs_case) 
+rm(list = setdiff(ls(), c("mig_lions_data", "mig_cases", "input_dir", "output_dir", "confront_stop", "clean_missings", "read_and_subset"))) # Keeping only what's needed
 gc()
+
 
 # 3. Gs_sentence -------
 ## 3.1 Run function to read, create UNIQUEID and subset
 
 ### Variables to subset
 gs_sentence <- c("UNIQUEID",
-                  "FINE",
-                  "INCAR_DAYS",
-                  "INCAR_MONTHS",
-                  "INCAR_TYPE",
-                  "INCAR_YEARS")
+                 "ID" = "PARTID",
+                 "FINE",
+                 "INCAR_TYPE",
+                 "INCAR_DAYS",
+                 "INCAR_MONTHS",
+                 "INCAR_YEARS")
 
 ### Read and subset
 
-gs_sentence <- read_and_subset(paste0(input_dir, "/gs_sentence.feather"), "DISTRICT", "CASEID", gs_sentence)
+gs_sentence <- read_and_subset(paste0(input_dir, "/gs_sentence.feather"), DISTRICT, CASEID, gs_sentence)
 
-## 3.2 Join to mig_lions_data
+## 3.2 Safely join to mig_lions_data
 
+# Errors if no UNIQUEID in g_case appears in mig_lions_data
+n_matched <- nrow(semi_join(mig_lions_data, gs_sentence, by = c("UNIQUEID", "ID"))) # Identify whether there will be matches first
+if (n_matched == 0) stop("No rows matched on UNIQUEID.") # Will show an error if nothing matches
+
+# Check observations before join
+n_before <- nrow(mig_lions_data)
+
+# If it's safe to proceed
 mig_lions_data <- 
-  mig_lions_data |> 
-  left_join(gs_sentence , by = "UNIQUEID")
+  left_join(mig_lions_data, gs_sentence,  by = c("UNIQUEID", "ID")) # Matching at participant level
 
+# Check observations before join
+n_after  <- nrow(mig_lions_data) 
+
+# To confirm that we are getting the expected number of rows (Given this is a case-level dataset we should not be getting more rows)
+if (n_before != n_after) stop("Number of rows changed after join - Review merge") # Our number of observations pre and post join should be the same - Error if not
+
+## Checking the merge
+
+# Cleaning missingess
+mig_lions_data <- clean_missings(mig_lions_data)
+
+# Set of rules to validate
+rules <- validator(
+  FINE_all_missing = mean(is.na(FINE)) * 100 < 100, # FINE should not be all missing
+  INCAR_DAYS_all_missing = mean(is.na(INCAR_DAYS)) * 100 < 100, # CASE_TYPE should not be all missing
+  INCAR_MONTHS_all_missing = mean(is.na(INCAR_MONTHS )) * 100 < 100, # INCAR_MONTHS should not be all missing
+  INCAR_YEARS_all_missing = mean(is.na(INCAR_YEARS )) * 100 < 100, # INCAR_YEARS should not be all missing
+  INCAR_TYPE_all_missing = mean(is.na(INCAR_TYPE )) * 100 < 100, # INCAR_TYPE should not be all missing
+  non_unique_rows = is_unique(UNIQUEID, ID), # UNIQUEID and ID should uniquely identify each row
+  n_participants_discrepancy = N_PARTICIPANTS == do_by(ID, by = UNIQUEID, fun = function(x) length(unique(x))) # Verify dataset is at participant-level - No more rows than participants 
+)
+
+# Run helper function to check and stop if any rules are broken
+confront_stop(mig_lions_data, rules)
+
+# Clean up
+rm(list = setdiff(ls(), c("mig_lions_data", "mig_cases", "input_dir", "output_dir", "confront_stop", "clean_missings", "read_and_subset"))) # Keeping only what's needed
+gc()
 
 # 4. Get gs_case_prog_cat  -------
 ## 4.1 Run function to read, create UNIQUEID and subset
 
 # Variables to subset
 
-gs_case_prog_cat <- c("UNIQUEID", 
-                  "PROG_CAT")
+gs_case_prog_cat <- c("UNIQUEID",
+                      "ID",
+                      "PROG_CAT")
 
 # Read and subset
-gs_case_prog_cat <- read_and_subset(paste0(input_dir, "/gs_case_prog_cat.feather"), "DISTRICT", "ID", gs_case_prog_cat)
+gs_case_prog_cat <- read_and_subset(paste0(input_dir, "/gs_case_prog_cat.feather"), DISTRICT, CASEID, gs_case_prog_cat)
 
-## 4.2 Join to mig_lions_data
+## 4.2 Safely join to mig_lions_data
 
+# Errors if no UNIQUEID in g_case appears in mig_lions_data
+n_matched <- nrow(semi_join(mig_lions_data, gs_case_prog_cat, by = c("UNIQUEID", "ID"))) # Identify whether there will be matches first
+if (n_matched == 0) stop("No rows matched on UNIQUEID.") # Will show an error if nothing matches - TODO: Confirm the level of analysis of this dataset, many IDs do not match. We are losing a lot of information and it might be from a merge issue. We could conca all programs and join by case, instead of case-id
+
+# Check observations before join
+n_before <- nrow(mig_lions_data)
+
+# If it's safe to proceed
 mig_lions_data <- 
-  mig_lions_data |> 
-  left_join(gs_case_prog_cat , by = "UNIQUEID")
+  left_join(mig_lions_data, gs_case_prog_cat,  by = c("UNIQUEID", "ID")) # Matching at participant level
+
+# Check observations before join
+n_after  <- nrow(mig_lions_data) 
+
+# To confirm that we are getting the expected number of rows (Given this is a case-level dataset we should not be getting more rows)
+if (n_before != n_after) stop("Number of rows changed after join - Review merge") # Our number of observations pre and post join should be the same - Error if not
+
+## Checking the merge
+
+# Cleaning missingess
+mig_lions_data <- clean_missings(mig_lions_data)
 
 # 5. Get list of charges  -------
+## Safely join with immigration charges vector
 
+# Errors if no UNIQUEID in g_case appears in mig_lions_data
+n_matched <- nrow(semi_join(mig_lions_data, mig_cases, by = "UNIQUEID")) # Identify whether there will be matches first
+if (n_matched == 0) stop("No rows matched on UNIQUEID.") # Will show an error if nothing matches 
+
+# Check observations before join
+n_before <- nrow(mig_lions_data)
+
+# If it's safe to proceed
 mig_lions_data <- 
-  mig_lions_data |> 
-  left_join(mig_cases , by = "UNIQUEID") # Adding charge list and number of participants per case
-  
+  left_join(mig_lions_data, mig_cases,  by = "UNIQUEID") # Matching at participant level
+
+# Check observations before join
+n_after  <- nrow(mig_lions_data) 
+
+# To confirm that we are getting the expected number of rows (Given this is a case-level dataset we should not be getting more rows)
+if (n_before != n_after) stop("Number of rows changed after join - Review merge") # Our number of observations pre and post join should be the same - Error if not
+
+# Clean up
+rm(list = setdiff(ls(), c("mig_lions_data", "mig_cases", "input_dir", "output_dir", "confront_stop", "clean_missings", "read_and_subset"))) # Keeping only what's needed
+gc()
+
+
+# TODO: STOPPED REVIEW HERE
 # 6. Get gs_count  -------
 ## 6.1 Run function to read, create UNIQUEID and subset
 
 # Variables to subset
 
 gs_count <- c("UNIQUEID",
-                      "CRTHISID", # TODO: pls fix indentation here
-                      "INSTID",
-                      "PENT_PROV")
+              "CRTHISID", 
+              "INSTID",
+              "PENT_PROV")
 
 # Read and subset
 gs_count <- read_and_subset(paste0(input_dir, "/gs_count.feather"), "DISTRICT", "CASEID", gs_count)
@@ -387,19 +508,6 @@ mig_lions_data <-
 
 # 10. Reviewing missingness  -------
 
-mig_lions_data <- mig_lions_data |> 
-  mutate(across(everything(), ~ {
-    x <- .
-    # Convert to character to test empties safely, then restore class if needed
-    # 1) Trim whitespace; 2) blank -> NA; 3) common tokens -> NA
-    if (is.character(x)) {
-      x <- str_trim(x)
-      x[x == ""] <- NA_character_
-      x[tolower(x) %in% c("na","n/a","null",".")] <- NA_character_
-    }
-    x
-  }))
-
 
 missing_summary <- mig_lions_data |> 
   summarise(across(
@@ -423,9 +531,8 @@ arrow::write_feather(mig_lions_data, paste0(output_dir, "/immigration_defendant_
 ## Include cleaning from table_gs for various variables for easier analysis (e.g., judge name and type instead of the code)
 ## Include data checking code
 
-# file_path <- paste0(input_dir, "/gs_court_hist.feather")
-# df <- arrow::read_feather(file_path) # Reading dataset
-#gs_defend_stat <- read_feather(paste0(input_dir, "/gs_defend_stat.feather"))
+
+#pointblank::scan_data(palmerpenguins::penguins)
 
 
 
