@@ -103,32 +103,12 @@ download_with_retry <- function(url, path, tries = 3) {
   stop("Failed to download after retries: ", url)
 }
 
-# Function to get tag for the latest release GitHub: latest release TAG for this repo (or NA if none) ---
-
-get_latest_github_release_tag <- function(repo = Sys.getenv("GITHUB_REPOSITORY"),
-                                          token = Sys.getenv("GITHUB_TOKEN")) {
-  if (identical(repo, "")) stop("GITHUB_REPOSITORY not set (expected 'owner/repo').")
-  url <- paste0("https://api.github.com/repos/", repo, "/releases/latest") # Getting JSON of latest release
-  hdr <- httr::add_headers(
-    `User-Agent` = UA,
-    Authorization = if (nzchar(token)) paste("Bearer", token) else NULL,
-    Accept = "application/vnd.github+json"
-  )
-  resp <- httr::GET(url, hdr)
-  if (httr::status_code(resp) == 404) return(NA_character_)  # no releases yet
-  httr::stop_for_status(resp)
-  json <- httr::content(resp, as = "parsed")
-  # Prefer tag_name; fall back to name if needed
-  tag <- json$tag_name %||% json$name %||% NA_character_ # Getting the tag name of the latest release (it's automatically called tag_name in release's json)
-  as.character(tag)
-}
-
-
 ## Running all functions
 
 fs::dir_create("inputs")
 
 # Identify latest month on DOJ
+
 latest <- get_latest_lions_month() |> purrr::pluck("latest") # Run our first function
 latest_url  <- latest |> dplyr::pull(url)
 latest_name <- sprintf("%s %d", latest$month_name, latest$year)        # e.g., "April 2025"
@@ -139,6 +119,7 @@ message("DOJ latest: ", latest_name, " (tag ", latest_tag, ")") # Show the lates
 message("Month page: ", latest_url) # and its URL
 
 # Getting the month tag to name the release with the month (this is pulled in the YAML later)
+
 ghout <- Sys.getenv("GITHUB_ENV")
 if (nzchar(ghout)) {
   cat(sprintf("LATEST_MONTH_TAG=%s\n",  latest_tag),  file = ghout, append = TRUE)
@@ -146,19 +127,21 @@ if (nzchar(ghout)) {
 }
 
 # Compare with latest GitHub release tag
-latest_release_tag <- get_latest_github_release_tag()
+
+latest_release_tag <- readLines("outputs/latest.txt")
+
 msg_release <- if (is.na(latest_release_tag) || !nzchar(latest_release_tag)) "<none>" else latest_release_tag
 message("Latest GitHub release tag: ", msg_release)
 
 # CHECKER: Decide whether we need to skip downloads or not
 
-#if (!is.na(latest_release_tag) && nzchar(latest_release_tag) && identical(latest_release_tag, latest_tag)) {
-#  message("Already released ", latest_tag, " — skipping download.")
-#  if (nzchar(ghout)) cat("SHOULD_RUN=false\n", file = ghout, append = TRUE)
-#  quit(save = "no", status = 0)  # Stop if there is no new release
-#} else {
-#  if (nzchar(ghout)) cat("SHOULD_RUN=true\n", file = ghout, append = TRUE) # Otherwise, proceed
-#}
+if (!is.na(latest_release_tag) && nzchar(latest_release_tag) && identical(latest_release_tag, latest_tag)) {
+ message("Already released ", latest_tag, " — skipping download.")
+ if (nzchar(ghout)) cat("SHOULD_RUN=false\n", file = ghout, append = TRUE)
+ quit(save = "no", status = 0)  # Stop if there is no new release
+} else {
+ if (nzchar(ghout)) cat("SHOULD_RUN=true\n", file = ghout, append = TRUE) # Otherwise, proceed
+}
 
 # Download new month zips
 zip_urls <- get_disk_links(latest_url) # Run our second function to get the DISK links
