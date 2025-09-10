@@ -6,6 +6,7 @@ library(tidylog)
 library(arrow)
 library(purrr)
 library(fs)
+install.packages("validate")
 library(validate) # For data checking code
 
 # Setup directories
@@ -15,8 +16,8 @@ output_dir <- "outputs/mig_LIONS"
 
 # For local tests
 
-input_dir <- "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
-output_dir <- "~/Dropbox/DDP/Tests"
+#input_dir <- "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
+#output_dir <- "~/Dropbox/DDP/Tests"
 fs::dir_create(output_dir)
 
 # 0.0 Helpers
