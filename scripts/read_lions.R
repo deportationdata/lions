@@ -8,13 +8,13 @@ library(purrr)
 library(dplyr)
 library(tibble)
 library(fs) # To suppress messages
-library(tools)  # for file_path_sans_ext()
+library(tools) # for file_path_sans_ext()
 
 parse_table_chunk <- function(chunk, disk) { # Each disk folder (currently 28) has a README.txt file and other gs_*.txt files (27 is an exception***)
   header <- chunk[1]
   table <- str_extract(header, "^GS_[A-Z0-9_]+")
 
-  #–– main regexp ––#
+  # –– main regexp ––#
   # 1  column name      e.g. STATE_COMP_RECVD
   # 2  NOT NULL (optional)
   # 3  type-token        e.g. NUMBER(12,2) | FLOAT(*) | DATE | VARCHAR2(30)
@@ -76,7 +76,8 @@ derive_table <- \(f) {
 # read in all of the README files in any DISC** folder
 readmes <-
   dir(
-    "inputs",
+    "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data", # Test
+    # "inputs",
     pattern = "README\\.txt$",
     recursive = TRUE, # looks in subdirectories too
     full.names = TRUE # full file paths instead of just filenames
@@ -96,7 +97,7 @@ layouts <-
   map2_dfr(readmes, names(readmes), \(lines, disk) {
     # start of layout declaration is the table name starting wiht GS_
     starts <- which(str_detect(lines, "^GS_[A-Z0-9_]+\\s+-\\s+\\d+"))
-    ends <- c(starts[-1] - 1L, length(lines)) 
+    ends <- c(starts[-1] - 1L, length(lines))
 
     map2_dfr(starts, ends, \(i, j) parse_table_chunk(lines[i:j], disk))
   }) |>
@@ -109,7 +110,7 @@ layouts_data <- layouts |> filter(!is_lookup_table) # Dropping disk 28
 # get layouts for lookup tables only
 layouts_lookup <-
   layouts |>
-  # global_LIONS is not a lookup table nor a data table; ignore completely 
+  # global_LIONS is not a lookup table nor a data table; ignore completely
   filter(is_lookup_table & file != "global_LIONS.txt") |>
   select(disk, table, file)
 
@@ -135,39 +136,39 @@ fs::dir_create(output_dir)
 
 walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
   layout <- tbl[["fwf"]][[1]]
-  
-  if (file_exists(path)) {
-    tryCatch({
-      
-      # Extract the base name to save it
-      base_name <- file_path_sans_ext(basename(path))
-      feather_path <- file.path(output_dir, paste0(base_name, ".feather"))
 
-      #if (file.exists(feather_path)) { # Including this skip to face crashes while running the code - If it crashes, it will not try to read files that were already read
-      #  message("Skipping (already exists): ", base_name)
-      #  return(invisible(NULL))
-      # }
-      
-      df <- read_fwf(path, col_positions = layout, col_types = cols(.default = "c"))  # No warning
-      
-      # Replace * for NA 
-      df <- df |> 
-        mutate(across(everything(), ~case_when(
-          #.x == "*" ~ "Redacted",  Variables with * values appear to be personal identifiable information (PII)
-          .x == "" ~ NA_character_, # Spaces as NAs
-          TRUE ~ .x
-        ))) 
-      
-      # Save as feather file
-      write_feather(df, feather_path)
-      
-      message("✔ Saved: ", feather_path)
-    }, error = function(e) {
-      message("✘ Error processing: ", path, " — ", e$message)
-    })
+  if (file_exists(path)) {
+    tryCatch(
+      {
+        # Extract the base name to save it
+        base_name <- file_path_sans_ext(basename(path))
+        feather_path <- file.path(output_dir, paste0(base_name, ".feather"))
+
+        # if (file.exists(feather_path)) { # Including this skip to face crashes while running the code - If it crashes, it will not try to read files that were already read
+        #  message("Skipping (already exists): ", base_name)
+        #  return(invisible(NULL))
+        # }
+
+        df <- read_fwf(path, col_positions = layout, col_types = cols(.default = "c")) # No warning
+
+        # Replace * for NA
+        df <- df |>
+          mutate(across(everything(), ~ case_when(
+            # .x == "*" ~ "Redacted",  Variables with * values appear to be personal identifiable information (PII)
+            .x == "" ~ NA_character_, # Spaces as NAs
+            TRUE ~ .x
+          )))
+
+        # Save as feather file
+        write_feather(df, feather_path)
+
+        message("✔ Saved: ", feather_path)
+      },
+      error = function(e) {
+        message("✘ Error processing: ", path, " — ", e$message)
+      }
+    )
   } else {
     message("⚠ File not found: ", path)
   }
 })
-
-

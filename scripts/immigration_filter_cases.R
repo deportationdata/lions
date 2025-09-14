@@ -1,4 +1,4 @@
-# Description: This script reads in all feather files and outputs a vector of all UNIQUEIDs that have at least one immigration related charge 
+# Description: This script reads in all feather files and outputs a vector of all CASE_IDs that have at least one immigration related charge 
 
 library(readr)
 library(dplyr)
@@ -12,6 +12,10 @@ input_dir <- "outputs"
 
 output_dir <- "outputs/mig_LIONS"
 fs::dir_create(output_dir)
+
+# Tests
+#input_dir <- "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
+#output_dir <- "~/Dropbox/DDP/Tests"
 
 # 1. List setups
 ## 1.1. List of Immigration Status - Update as needed. Keep the following format for correct filtering "8 U.S.C. § 1306(a)"  
@@ -101,8 +105,8 @@ gs_count <- arrow::read_feather(paste0(input_dir, "/gs_count.feather"))
 ## 2.1 Creating unique ID (CASEID - District)
 
 gs_count <- gs_count |> 
-  mutate(UNIQUEID = paste0(DISTRICT, CASEID)) |> 
-  select(UNIQUEID, everything())
+  mutate(CASE_ID = paste0(DISTRICT, CASEID)) |> 
+  select(CASE_ID, everything())
 
 ## 2.2 Format CHARGE to match the statute format in the tibble - also easier for analysis
 
@@ -158,22 +162,22 @@ gs_count <- gs_count |>
 filtered_gs_count <-
   gs_count |> 
   filter(statute_code %in% statutes_vec) |>          # keep rows that match any statute
-  distinct(UNIQUEID, .keep_all = TRUE) 
+  distinct(CASE_ID, .keep_all = TRUE) 
 
 ## 3.3 Create case-level variable with all charges 
 # This dataset is at the participant level, so there are multiple rows per case. We want to collapse it so each row has a cell with all charges for that case (comma separated) so we can filter all cases with at least one immigration related charge, not only the lead charge.
 
 collapsed <- gs_count |> 
-  group_by(UNIQUEID) |> 
+  group_by(CASE_ID) |> 
   summarise(
     CHARGES_LIST = paste(unique(statute_code), collapse = ", "),
     .groups = "drop"
   )
 
-## 3.4 Subset the case-level dataset to get a list of only immigration-related uniqueids (UNIQUEIDs, list of charges and amount of participants for future use)
+## 3.4 Subset the case-level dataset to get a list of only immigration-related CASE_IDs (CASE_IDs, list of charges and amount of participants for future use)
 
 immigration_cases <- collapsed |> 
-  filter(UNIQUEID %in% pull(filtered_gs_count, UNIQUEID)) 
+  filter(CASE_ID %in% pull(filtered_gs_count, CASE_ID)) 
 
 # 4 Save list of immigration related caseids
 
