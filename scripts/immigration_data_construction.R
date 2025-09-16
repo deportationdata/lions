@@ -16,8 +16,8 @@ output_dir <- "outputs/mig_LIONS"
 
 # For local tests
 
-#input_dir <- "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
-#output_dir <- "~/Dropbox/DDP/Tests"
+# input_dir <- "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
+# output_dir <- "~/Dropbox/DDP/Tests"
 fs::dir_create(output_dir)
 
 # 0.0 Helpers
@@ -67,51 +67,60 @@ clean_missings <- function(data) {
 ## Safely join datasets
 
 safe_join <- function(df1, df2, by_vars, clean_keys = TRUE) {
-  
   # Verify that the by_vars vector is specified correctly
   if (!is.null(names(by_vars)) && any(nzchar(names(by_vars)))) {
-    left_keys  <- names(by_vars)
+    left_keys <- names(by_vars)
     right_keys <- unname(by_vars)
   } else {
-    left_keys  <- by_vars
+    left_keys <- by_vars
     right_keys <- by_vars
   }
-  
+
   # Verify whether the key variables (for by_vars) exist in both datasets
-  missing_left  <- setdiff(left_keys,  names(df1))
+  missing_left <- setdiff(left_keys, names(df1))
   missing_right <- setdiff(right_keys, names(df2))
-  if (length(missing_left))
+  if (length(missing_left)) {
     stop("Missing join columns in df1: ", paste(missing_left, collapse = ", "))
-  if (length(missing_right))
+  }
+  if (length(missing_right)) {
     stop("Missing join columns in df2: ", paste(missing_right, collapse = ", "))
-  
-  # Clean key variables to improve matching 
+  }
+
+  # Clean key variables to improve matching
   if (clean_keys) {
-    for (k in left_keys)  if (is.character(df1[[k]])) df1[[k]] <- str_squish(df1[[k]]) # Trimming spaces
+    for (k in left_keys) if (is.character(df1[[k]])) df1[[k]] <- str_squish(df1[[k]]) # Trimming spaces
     for (k in right_keys) if (is.character(df2[[k]])) df2[[k]] <- str_squish(df2[[k]])
   }
-  
-  # Identify whether the key's type mismatches- if different, coerce to character 
+
+  # Identify whether the key's type mismatches- if different, coerce to character
   for (i in seq_along(left_keys)) {
     cl1 <- class(df1[[left_keys[i]]])[1]
     cl2 <- class(df2[[right_keys[i]]])[1]
     if (!identical(cl1, cl2)) {
-      message(sprintf("Coercing key '%s' (df1: %s) and '%s' (df2: %s) to character for join.", # To identify whether there was a type change
-                      left_keys[i], cl1, right_keys[i], cl2))
-      df1[[left_keys[i]]]  <- as.character(df1[[left_keys[i]]])
+      message(sprintf(
+        "Coercing key '%s' (df1: %s) and '%s' (df2: %s) to character for join.", # To identify whether there was a type change
+        left_keys[i], cl1, right_keys[i], cl2
+      ))
+      df1[[left_keys[i]]] <- as.character(df1[[left_keys[i]]])
       df2[[right_keys[i]]] <- as.character(df2[[right_keys[i]]])
     }
   }
-  
+
   # Verify first whether there are matches between the datasets
   n_matched <- nrow(semi_join(df1, df2, by = by_vars))
   if (n_matched == 0) {
     # Show a few unmatched examples to debug
-    example <- df1 |> anti_join(df2, by = by_vars) |> select(all_of(left_keys)) |> distinct() |> head(10)
-    stop("No rows matched on join keys. First few unmatched keys from df1:\n",
-         paste(capture.output(print(example)), collapse = "\n"))
+    example <- df1 |>
+      anti_join(df2, by = by_vars) |>
+      select(all_of(left_keys)) |>
+      distinct() |>
+      head(10)
+    stop(
+      "No rows matched on join keys. First few unmatched keys from df1:\n",
+      paste(capture.output(print(example)), collapse = "\n")
+    )
   }
-  
+
   # Check duplicates in df2 keys to avoid row inflation
   dup_df2 <- df2 |>
     count(across(all_of(right_keys)), name = "n") |>
@@ -119,35 +128,43 @@ safe_join <- function(df1, df2, by_vars, clean_keys = TRUE) {
   if (nrow(dup_df2) > 0) {
     message(sprintf("Warning: df2 has %s duplicated key combination(s). This may duplicate rows in df1.", nrow(dup_df2)))
   }
-  
+
   # Join
   n_before <- nrow(df1)
   out <- left_join(df1, df2, by = by_vars)
-  
+
   # Verify whether there was a change in number of rows
   if (nrow(out) != n_before) {
-    stop(sprintf("Number of rows changed after join (%s -> %s). Review duplicate keys in df2.",
-                 n_before, nrow(out)))
+    stop(sprintf(
+      "Number of rows changed after join (%s -> %s). Review duplicate keys in df2.",
+      n_before, nrow(out)
+    ))
   }
-  
+
   # Flag if ALL newly added columns are NA - There's probably something wrong
   new_cols <- setdiff(names(out), names(df1))
   if (length(new_cols)) {
     miss <- sapply(out[new_cols], function(x) mean(is.na(x)))
     all_na <- all(miss == 1)
-    msg <- paste0("New columns NA-fraction:\n",
-                  paste(sprintf("  %s: %.1f%%", names(miss), 100*miss), collapse = "\n"))
+    msg <- paste0(
+      "New columns NA-fraction:\n",
+      paste(sprintf("  %s: %.1f%%", names(miss), 100 * miss), collapse = "\n")
+    )
     message(msg)
     if (all_na) {
       # Show a small sample of unmatched keys to help diagnose
-      example <- df1 |> anti_join(df2, by = by_vars) |> select(all_of(left_keys)) |> distinct() |> head(10)
+      example <- df1 |>
+        anti_join(df2, by = by_vars) |>
+        select(all_of(left_keys)) |>
+        distinct() |>
+        head(10)
       message("All newly joined columns are 100% NA. Example unmatched keys from df1:")
       message(paste(capture.output(print(example)), collapse = "\n"))
     }
   } else {
     message("Note: No new columns were added by the join (column names overlapped).")
   }
-  
+
   out
 }
 
@@ -870,23 +887,25 @@ gc()
 table_gs_unit <- read_feather(file.path(input_dir, "table_gs_unit.feather")) |>
   mutate(
     UNIT_ID = if_else(is.na(District) | is.na(Code), # Create unique UNIT ID (District+Code)
-                             NA_character_, str_c(District, Code))
-    ) |>
+      NA_character_, str_c(District, Code)
+    )
+  ) |>
   select(UNIT_ID, UNIT = Description)
 
 immigration_data <-
   immigration_data |>
-    mutate(
-      UNIT_ID = if_else(is.na(DISTRICT) | is.na(UNIT), # Create unique UNIT ID (District+Code) to match the lookup table
-                        NA_character_, str_c(DISTRICT, UNIT))
-    ) |>
-    rename(UNIT_CODE = UNIT) 
+  mutate(
+    UNIT_ID = if_else(is.na(DISTRICT) | is.na(UNIT), # Create unique UNIT ID (District+Code) to match the lookup table
+      NA_character_, str_c(DISTRICT, UNIT)
+    )
+  ) |>
+  rename(UNIT_CODE = UNIT)
 
 join_by <- c("UNIT_ID")
 
 immigration_data <-
-  safe_join(immigration_data, table_gs_unit, join_by) |> 
-  mutate(UNIT = if_else(is.na(UNIT), UNIT_CODE, UNIT))  # If UNIT is missing, replace with the code
+  safe_join(immigration_data, table_gs_unit, join_by) |>
+  mutate(UNIT = if_else(is.na(UNIT), UNIT_CODE, UNIT)) # If UNIT is missing, replace with the code
 
 
 # 11. Reviewing missingness  -------
