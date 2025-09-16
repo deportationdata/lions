@@ -76,8 +76,8 @@ derive_table <- \(f) {
 # read in all of the README files in any DISC** folder
 readmes <-
   dir(
-    "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data", # Test
-    # "inputs",
+    # "~/Library/CloudStorage/Box-Box/deportationdata/data/EOUSA/LIONS", # Test
+    "inputs",
     pattern = "README\\.txt$",
     recursive = TRUE, # looks in subdirectories too
     full.names = TRUE # full file paths instead of just filenames
@@ -117,18 +117,23 @@ layouts_lookup <-
 # Create a list of file paths for each disk and file
 layout_by_file <- layouts_data |>
   group_by(file_path = file.path("inputs/unzipped", disk, file)) |>
+  # group_by(file_path = file.path("~/Library/CloudStorage/Box-Box/deportationdata/data/EOUSA/LIONS", disk, file)) |> # Test
   summarise(
     fwf = list(fwf_positions(begin, end, col_names)),
+    col_types = paste0(replace(col_type, col_type %in% c("D"), "c"), collapse = ""), # Compact readr type string - If these are Dates, we will take them as character and process later (they have Oracle-style DD-MON-YYYY format)
+    date_cols = list(col_names[col_type == "D"]), # Identify date columns for post-processing
     .groups = "drop"
   )
 
 # Creating table to walk
 
 layout_tbl <- split(layout_by_file, layout_by_file$file_path)
+# layout_tbl <- layout_tbl[1:2]# Test
 
 # Creating directory to save feather files
 
 output_dir <- "outputs"
+# output_dir <- "~/Dropbox/DDP/Tests" # Test
 
 fs::dir_create(output_dir)
 
@@ -136,6 +141,8 @@ fs::dir_create(output_dir)
 
 walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
   layout <- tbl[["fwf"]][[1]]
+  types_str <- tbl[["col_types"]][[1]]
+  date_cols <- tbl[["date_cols"]][[1]] # Bring vector of date columns
 
   if (file_exists(path)) {
     tryCatch(
@@ -149,15 +156,34 @@ walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
         #  return(invisible(NULL))
         # }
 
-        df <- read_fwf(path, col_positions = layout, col_types = cols(.default = "c")) # No warning
+        df <-
+          read_fwf(path,
+            col_positions = layout,
+            col_types = types_str
+          )
 
-        # Replace * for NA
-        df <- df |>
-          mutate(across(everything(), ~ case_when(
-            # .x == "*" ~ "Redacted",  Variables with * values appear to be personal identifiable information (PII)
-            .x == "" ~ NA_character_, # Spaces as NAs
-            TRUE ~ .x
-          )))
+        # Clean missingness in character
+        df <-
+          df |>
+          mutate(across(everything(), ~ {
+            x <- .
+            # Convert to character to test NAs safely, then restore class if needed
+            if (is.character(x)) {
+              x <- str_trim(x) # Trim whitespace
+              x[x == ""] <- NA_character_ # Blank -> NA
+              x[tolower(x) %in% c("na", "n/a", "null", ".")] <- NA_character_ # Common tokens -> NA
+            }
+            x
+          }))
+
+        # Convert date columns to Date type
+        if (length(date_cols)) {
+          df <- df |>
+            mutate(across(
+              all_of(date_cols),
+              ~ as.Date(., format = "%d-%b-%Y")
+            ))
+        }
 
         # Save as feather file
         write_feather(df, feather_path)
