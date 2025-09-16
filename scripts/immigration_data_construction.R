@@ -16,8 +16,8 @@ output_dir <- "outputs/mig_LIONS"
 
 # For local tests
 
-input_dir <- "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
-output_dir <- "~/Dropbox/DDP/Tests"
+#input_dir <- "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
+#output_dir <- "~/Dropbox/DDP/Tests"
 fs::dir_create(output_dir)
 
 # 0.0 Helpers
@@ -231,14 +231,59 @@ gs_case_vars <- c(
 # Read and subset
 gs_case <- read_and_subset(paste0(input_dir, "/gs_case.feather"), DISTRICT, ID, gs_case_vars)
 
-## 2.2 Renaming for join
+## 2.2 Cleaning for join
 
 gs_case <-
   gs_case |>
   rename(
     CASE_TYPE = TYPE,
     CASE_STATUS = STATUS
-  )
+  ) |>
+  mutate(
+    # Title: leading number at start (e.g., "8" in "8 :1324(a)(2)")
+    title = str_extract(LEAD_CHARGE, "^\\s*\\d+") |>
+      str_remove("^0+") |> # remove leading zeros
+      str_trim(),
+
+    # Section raw: everything after the first colon that looks like a section
+    # (digits/letters/parentheses), ignoring spaces
+    section_raw = str_match(LEAD_CHARGE, ":\\s*([0-9A-Za-z()]+)")[, 2],
+
+    # Trim any leading zeros in the section number (won't affect parentheses)
+    section_raw = str_replace(section_raw, "^0+", ""),
+
+    # If section already has parentheses, keep as-is.
+    # If it doesn't (e.g., "1324a2"), convert the tail after the leading digits
+    # so that letters/digit-runs become (a)(2), giving "1324(a)(2)".
+    section_norm = if_else(
+      !is.na(section_raw) & !str_detect(section_raw, "\\("),
+      {
+        # split into leading digits + the rest (e.g., "1324" + "a2")
+        m <- str_match(section_raw, "^(\\d+)(.*)$")
+        lead <- m[, 2]
+        rest <- m[, 3]
+
+        # wrap letters and digit groups in parentheses for the tail
+        ifelse(
+          is.na(rest) | rest == "",
+          lead,
+          paste0(
+            lead,
+            rest |>
+              str_replace_all("([A-Za-z])", "(\\1)") |>
+              str_replace_all("(\\d+)", "(\\1)")
+          )
+        )
+      },
+      section_raw
+    ),
+    LEAD_CHARGE = if_else( # Replacing charge codes with formatted statute codes
+      !is.na(title) & !is.na(section_norm),
+      paste0(title, " U.S.C. § ", section_norm),
+      LEAD_CHARGE # To replace with * in the cases it was redacted
+    )
+  ) |>
+  select(!c(title, section_raw, section_norm)) # Removing temporary variables
 
 ## 2.3 Safely join to immigration_data
 
@@ -390,7 +435,7 @@ gs_count_vars <- c(
   "ID",
   "CATEGORY",
   "PENT_PROV"
-) 
+)
 
 # Read and subset
 gs_count <- read_and_subset(paste0(input_dir, "/gs_count.feather"), DISTRICT, CASEID, gs_count_vars) |>
@@ -546,133 +591,279 @@ gc()
 
 
 # 8. Get gs_defend_stat -------
-## 8.1 Run function to read, create CASE_ID and subset #TODO - IDENTIFY LEVEL OF ANALYSIS TOO DEBUG MERGE BREAKAGE
+## 8.1 Run function to read, create CASE_ID and subset TODO - IDENTIFY LEVEL OF ANALYSIS TOO DEBUG MERGE BREAKAGE
+
+### Variables to subset
+
+gs_defend_stat_vars <- c(
+  "CASE_ID",
+  "PARTID",
+  "STATUS_TYPE" = "TYPE",
+  "CUSTODY_LOC",
+  "DETEN_REASON",
+  "START_DATE",
+  "END_DATE",
+  "TERM_REASON"
+)
+
+### Read and subset
+
+gs_defend_stat <- read_and_subset(paste0(input_dir, "/gs_defend_stat.feather"), DISTRICT, CASEID, gs_defend_stat_vars) |>
+  mutate(PARTICIPANT_ID = paste0(CASE_ID, PARTID)) |> # Creating PARTICIPANT_ID for join - in this dataset, according to the codebook, ID is the participant status
+  filter(CASE_ID %in% pull(mig_cases, CASE_ID)) # Filter for migration related cases for speed
+
+## 8.2 Pivot to create participant-level dataset
+
+gs_defend_stat <-
+  gs_defend_stat |>
+  group_by(PARTICIPANT_ID) |>
+  arrange(START_DATE, END_DATE, .by_group = TRUE) |>
+  # keep only the first and last row per participant (if we keep all it's at least 80 variables, we'll keep for now the first and last status and an indicator of the amount of statuses)
+  mutate(
+    row = row_number(), # First = 1
+    N_STATUS = max(row)
+  ) |> # Will show the last row per participant
+  filter(row == 1 | row == N_STATUS) |> # Keeping first and last row
+  mutate(instance = case_when(
+    row == 1 ~ "FIRST",
+    row == N_STATUS ~ "LAST"
+  )) |> # Label them to create variables after pivot
+  ungroup() |>
+  select(
+    PARTICIPANT_ID, N_STATUS, instance, STATUS_TYPE, START_DATE, END_DATE,
+    CUSTODY_LOC, DETEN_REASON, TERM_REASON
+  ) |>
+  pivot_wider(
+    names_from  = instance,
+    values_from = c(STATUS_TYPE, START_DATE, END_DATE, CUSTODY_LOC, DETEN_REASON, TERM_REASON),
+    names_glue  = "{.value}_{instance}" # e.g. TYPE_first, START_DATE_last
+  ) |>
+  select(PARTICIPANT_ID, N_STATUS, ends_with("_FIRST"), ends_with("_LAST"))
+
+## 8.3 Safely join to immigration_data
+
+join_by <- c("PARTICIPANT_ID")
+immigration_data <-
+  safe_join(immigration_data, gs_defend_stat, join_by)
+
+### Checking the merge
+### Cleaning missingess
+immigration_data <-
+  clean_missings(immigration_data)
+
+### Set of rules to validate
+rules <-
+  validator(
+    N_STATUS_all_missing = mean(is.na(N_STATUS)) * 100 < 100, # N_STATUS should not be all missing
+    STATUS_TYPE_FIRST_all_missing = mean(is.na(STATUS_TYPE_FIRST)) * 100 < 100, # STATUS_TYPE_FIRST should not be all missing
+    START_DATE_FIRST_all_missing = mean(is.na(START_DATE_FIRST)) * 100 < 100, # START_DATE_FIRST should not be all missing
+    END_DATE_FIRST_all_missing = mean(is.na(END_DATE_FIRST)) * 100 < 100, # END_DATE_FIRST should not be all missing
+    CUSTODY_LOC_FIRST_all_missing = mean(is.na(CUSTODY_LOC_FIRST)) * 100 < 100, # CUSTODY_LOC_FIRST should not be all missing
+    DETEN_REASON_FIRST_all_missing = mean(is.na(DETEN_REASON_FIRST)) * 100 < 100, # DETEN_REASON_FIRST should not be all missing
+    TERM_REASON_FIRST_all_missing = mean(is.na(TERM_REASON_FIRST)) * 100 < 100, # TERM_REASON_FIRST should not be all missing
+    STATUS_TYPE_LAST_all_missing = mean(is.na(STATUS_TYPE_LAST)) * 100 < 100, # STATUS_TYPE_LAST should not be all missing
+    START_DATE_LAST_all_missing = mean(is.na(START_DATE_LAST)) * 100 < 100, # START_DATE_LAST should not be all missing
+    END_DATE_LAST_all_missing = mean(is.na(END_DATE_LAST)) * 100 < 100, # END_DATE_LAST should not be all missing
+    CUSTODY_LOC_LAST_all_missing = mean(is.na(CUSTODY_LOC_LAST)) * 100 < 100, # CUSTODY_LOC_LAST should not be all missing
+    DETEN_REASON_LAST_all_missing = mean(is.na(DETEN_REASON_LAST)) * 100 < 100, # DETEN_REASON_LAST should not be all missing
+    TERM_REASON_LAST_all_missing = mean(is.na(TERM_REASON_LAST)) * 100 < 100, # TERM_REASON_LAST should not be all missing
+    non_unique_rows = is_unique(CASE_ID, PARTICIPANT_ID), # CASE_ID and PARTICIPANT_ID should uniquely identify each row
+    n_participants_discrepancy = N_PARTICIPANTS == do_by(PARTICIPANT_ID, by = CASE_ID, fun = function(x) length(unique(x))) # Verify dataset is at participant-level - No more rows than participants
+  )
+
+###  Run helper function to check and stop if any rules are broken
+confront_stop(immigration_data, rules)
+
+## 8.4 Clean up
+
+rm(list = setdiff(ls(), c("immigration_data", "mig_cases", "input_dir", "output_dir", "confront_stop", "clean_missings", "read_and_subset", "safe_join"))) # Keeping only what's needed
+gc()
+
+# 9. Get gs_court_judge -------
+## 9.1 Run function to read, create CASE_ID and subset
 
 # Variables to subset
 
-# gs_defend_stat_vars <- c(
-#   "CASE_ID",
-#   "PARTID",
-#   "CUSTODY_LOC",
-#   "DETEN_REASON"
-# )
+gs_court_judge_vars <- c(
+  "CASE_ID",
+  "ID",
+  "CRTHISID",
+  "JUDGEID",
+  "DISTRICT",
+  "START_DATE"
+)
+
+# Read and subset
+
+gs_court_judge <- read_and_subset(paste0(input_dir, "/gs_court_judge.feather"), DISTRICT, CASEID, gs_court_judge_vars) |>
+  mutate(
+    PARTICIPANT_ID = paste0(CASE_ID, ID), # Creating PARTICIPANT_ID for join
+    UNIQUE_JUDGEID = if_else(is.na(DISTRICT) | is.na(JUDGEID), # Create unique judge ID (District+ID)
+      NA_character_, str_c(DISTRICT, JUDGEID)
+    )
+  )
+
+## 9.2 Clean and get labels before merging
+# Read and clean table_gs_judge: lookup table with judge name and type code
+
+table_gs_judge <- read_feather(file.path(input_dir, "table_gs_judge.feather")) |>
+  mutate(
+    across(
+      where(is.character), # Clean missings before concatenating
+      ~ .x |>
+        str_trim() |>
+        na_if("NA") |>
+        na_if("")
+    ),
+    UNIQUE_JUDGEID = if_else(is.na(District) | is.na(ID), # Create unique judge ID (District+ID)
+      NA_character_, str_c(District, ID)
+    ),
+    JUDGE_NAME = if_else(is.na(FirstName) & is.na(LastName), # Create JUDGE_NAME from First and Last Name
+      NA_character_, str_c(FirstName, LastName, sep = " ")
+    ),
+    JUDGE_TYPE = if_else(is.na(District) | is.na(Type), # Creating unique type code because they differ across districts
+      NA_character_, str_c(District, Type)
+    )
+  ) |>
+  select(UNIQUE_JUDGEID, JUDGE_NAME, JUDGE_TYPE)
+
+# Read table_gs_judge_type: lookup table with judge type label
+
+table_gs_judge_type <- read_feather(file.path(input_dir, "table_gs_judge_type.feather")) |>
+  mutate(
+    across(
+      where(is.character), # Clean missings before concatenating
+      ~ .x |>
+        str_trim() |>
+        na_if("NA") |>
+        na_if("")
+    ),
+    JUDGE_TYPE = if_else(is.na(District) | is.na(Code), # Creating unique type code because they differ across districts
+      NA_character_, str_c(District, Code)
+    )
+  ) |>
+  select(JUDGE_TYPE_LABEL = Description, JUDGE_TYPE)
+
+# Join two lookup tables to get JUDGE_NAME and JUDGE_TYPE_LABEL
+join_by <- c("JUDGE_TYPE")
+table_gs_judge <-
+  safe_join(table_gs_judge, table_gs_judge_type, join_by) |>
+  select(-JUDGE_TYPE) # No need to keep the code
+
+# Join to gs_court_judge
+join_by <- c("UNIQUE_JUDGEID")
+gs_court_judge <-
+  safe_join(gs_court_judge, table_gs_judge, join_by)
+
+## 9.3 Transform at the participant level
+
+gs_court_judge <-
+  gs_court_judge |>
+  group_by(PARTICIPANT_ID) |>
+  arrange(START_DATE, .by_group = TRUE) |>
+  summarise(
+    N_JUDGES = n_distinct(UNIQUE_JUDGEID, na.rm = TRUE), # Count unique judges (#)
+    JUDGE_LIST = paste(unique(na.omit(JUDGE_NAME)), collapse = ", "), # Concatenate JUDGE_NAMES if multiple per
+    JUDGE_NAME_FIRST = JUDGE_NAME[1], # First judge name (There are participants with more than 40 judges, we will include furteher info for the first judge and leave all names concatenaded in JUDGE_LIST)
+    JUDGE_TYPE_FIRST = JUDGE_TYPE_LABEL[1], # First judge type
+    .groups = "drop"
+  )
+
+## 9.4 Safely join to immigration_data
+
+join_by <- c("PARTICIPANT_ID")
+immigration_data <- safe_join(immigration_data, gs_court_judge, join_by)
+
+### Checking the merge
+### Cleaning missingess
+immigration_data <-
+  clean_missings(immigration_data)
+
+### Set of rules to validate
+rules <-
+  validator(
+    N_JUDGES_all_missing = mean(is.na(N_JUDGES)) * 100 < 100, # N_JUDGES should not be all missing
+    JUDGE_LIST_all_missing = mean(is.na(JUDGE_LIST)) * 100 < 100, # JUDGE_LIST should not be all missing
+    JUDGE_NAME_FIRST_all_missing = mean(is.na(JUDGE_NAME_FIRST)) * 100 < 100, # JUDGE_NAME_FIRST should not be all missing
+    JUDGE_TYPE_FIRST_all_missing = mean(is.na(JUDGE_TYPE_FIRST)) * 100 < 100, # JUDGE_TYPE_FIRST should not be all missing
+    non_unique_rows = is_unique(CASE_ID, PARTICIPANT_ID), # CASE_ID and PARTICIPANT_ID should uniquely identify each row
+    n_participants_discrepancy = N_PARTICIPANTS == do_by(PARTICIPANT_ID, by = CASE_ID, fun = function(x) length(unique(x))) # Verify dataset is at participant-level - No more rows than participants
+  )
+
+###  Run helper function to check and stop if any rules are broken
+confront_stop(immigration_data, rules)
+
+## 9.5 Clean up
+
+rm(list = setdiff(ls(), c("immigration_data", "mig_cases", "input_dir", "output_dir", "confront_stop", "clean_missings", "read_and_subset", "safe_join"))) # Keeping only what's needed
+gc()
+
+# 10. Final cleaning (Lookup tables)-----------
+## 10.1 DISTRICT
+
+
+## 10.2 PARTICIPANT_TYPE
+## 10.1 ROLE
+## 10.1 GENDER
+## 10.1 COUNTRY
+## 10. CASE_STATUS
+## 10.2 UNIT
 # 
-# # Read and subset
-# gs_defend_stat_test <- read_feather(paste0(input_dir, "/gs_defend_stat.feather"))
-# gs_defend_stat <- read_and_subset(paste0(input_dir, "/gs_defend_stat.feather"), DISTRICT, CASEID, gs_defend_stat_vars) |> 
-#   mutate(PARTICIPANT_ID = paste0(CASE_ID, PARTID)) |> # Creating PARTICIPANT_ID for join - in this dataset, according to the codebook, ID is the participant status
-#   select(-c(PARTID, CASE_ID)) # Dropping ID to avoid confusion
-# 
-# ## 8.2 Safely join to immigration_data
-# 
-# join_by <- c("PARTICIPANT_ID")
-# immigration_data_test <-
-#   safe_join(immigration_data, gs_defend_stat, join_by)
-# 
-# ## Checking the merge
-# # Cleaning missingess
-# immigration_data <-
-#   clean_missings(immigration_data)
-# 
-# # Set of rules to validate
-# rules <-
-#   validator(
-#     CUSTODY_LOC_all_missing = mean(is.na(CUSTODY_LOC)) * 100 < 100, # CUSTODY_LOC should not be all missing
-#     DETEN_REASON_all_missing = mean(is.na(DETEN_REASON)) * 100 < 100, # DETEN_REASON should not be all missing
-#     non_unique_rows = is_unique(CASE_ID, PARTICIPANT_ID), # CASE_ID and PARTICIPANT_ID should uniquely identify each row
-#     n_participants_discrepancy = N_PARTICIPANTS == do_by(PARTICIPANT_ID, by = CASE_ID, fun = function(x) length(unique(x))) # Verify dataset is at participant-level - No more rows than participants
-#   )
-# 
-# # Run helper function to check and stop if any rules are broken
-# confront_stop(immigration_data, rules)
-# 
-# ## 8.3 Clean up
-# 
-# rm(list = setdiff(ls(), c("immigration_data", "mig_cases", "input_dir", "output_dir", "confront_stop", "clean_missings", "read_and_subset", "safe_join"))) # Keeping only what's needed
-# gc()
-# 
-# # 8. Get gs_court_judge -------
-# ## 8.1 Run function to read, create CASE_ID and subset
-# 
-# # Variables to subset 
-# 
-# gs_court_judge_vars <- c(
-#   "CASE_ID",
-#   "ID",
-#   "CRTHISID",
-#   "JUDGEID"
-# )
-# 
-# # Read and subset
-# 
-# gs_court_judge <- read_and_subset(paste0(input_dir, "/gs_court_judge.feather"), DISTRICT, CASEID, gs_court_judge_vars) |>
-#   mutate(PARTICIPANT_ID = paste0(CASE_ID, ID)) |> # Creating PARTICIPANT_ID for join
-#   select(-c(ID, CASE_ID)) # Dropping ID to avoid confusion
-# 
-# ## 8.2 Safely join to immigration_data
-# 
-# join_by <- c("PARTICIPANT_ID")
-# immigration_data <- safe_join(immigration_data, gs_court_judge, join_by)
-# 
-# immigration_data <-
-#   immigration_data |>
-#   left_join(gs_court_judge, by = c("CASE_ID", "CRTHISID", "ID"))
-# 
-# ## 8.3 Get judge name and type from table_gs
-# 
-# # Read table_gs_judge: lookup table with judge code, names and type code
-# table_gs_judge <- read_feather(paste0(input_dir, "/table_gs_judge.feather")) |>
+# table_gs_unit <- read_feather(file.path(input_dir, "table_gs_unit.feather")) |>
 #   mutate(
-#     UNIQUE_JUDGEID = paste0(District, ID), # Create unique judge ID (District+ID)
-#     JUDGE_NAME = paste0(FirstName, " ", LastName), # Create JUDGE_NAME from First and Last Name
-#     JUDGE_TYPE = paste0(District, Type)
-#   ) |> # Creating unique type code because they differ across districts
-#   select(UNIQUE_JUDGEID, JUDGE_NAME, JUDGE_TYPE)
+#     UNIT_ID = if_else(is.na(District) | is.na(Code), # Create unique UNIT ID (District+Code)
+#                              NA_character_, str_c(District, Code))
+#     ) |>
+#   select(UNIT_ID, UNIT = Description)
 # 
-# # Read table_gs_judge_type: lookup table with judge type code, type labels
-# table_gs_judge_type <- read_feather(paste0(input_dir, "/table_gs_judge_type.feather")) |>
-#   mutate(JUDGE_TYPE = paste0(District, Code)) |> # Creating unique type code because they differ across districts
-#   select(JUDGE_TYPE, JUDGE_TYPE_LABEL = Description)
+# immigration_data <- 
+#   immigration_data |> 
+#     mutate(
+#       UNIT_ID = if_else(is.na(DISTRICT) | is.na(UNIT), # Create unique UNIT ID (District+Code) to match the lookup table
+#                         NA_character_, str_c(DISTRICT, UNIT)) 
+#     ) |>
+#     select(-UNIT)
 # 
-# # Join to get JUDGE_NAME and JUDGE_TYPE
-# table_gs_judge <- table_gs_judge |>
-#   left_join(table_gs_judge_type, by = "JUDGE_TYPE")
+# join_by <- c("UNIT_ID")
 # 
-# # Join to main dataset
-# immigration_data <- immigration_data |>
-#   mutate(UNIQUE_JUDGEID = paste0(DISTRICT, JUDGEID)) |> # Create unique judge ID (District+ID)
-#   left_join(table_gs_judge, by = "UNIQUE_JUDGEID") |> # Join to get JUDGE_NAME and JUDGE_TYPE
-#   select(-UNIQUE_JUDGEID) # Remove temporary variable
-# 
-# # 10. Reviewing missingness  -------
-# 
-# 
-# missing_summary <- immigration_data |>
-#   summarise(across(
-#     everything(),
-#     ~ mean(is.na(.)) * 100
-#   )) |>
-#   tidyr::pivot_longer(
-#     everything(),
-#     names_to = "variable",
-#     values_to = "percent_missing"
-#   ) |>
-#   print(n = Inf)
-# 
-# # 10. Save final dataset -----
+# immigration_data <- 
+#   safe_join(immigration_data, table_gs_unit, join_by)
+
+## 10.3 CASE_TYPE
+## 10.4 BRANCH
+## 10.5 INCAR_TYPE
+## 10.6 PROG_CAT
+## 10.7 CATEGORY
+## 10.8 COURT
+#table_gs_court_loc
+## 10.9 DISPOSITION
+## 10.10 DISP_REASON
+## 10 STATUS_TYPE
+## 10.11 CUSTODY_LOC
+#table_gs_custody_loc
+## 10 DETEN_REASON
+#table_gs_deten_reason
+## 10 TERM_REASON
+
+# 11. Reviewing missingness  -------
+
+missing_summary <- immigration_data |>
+  summarise(across(
+    everything(),
+    ~ mean(is.na(.)) * 100
+  )) |>
+  tidyr::pivot_longer(
+    everything(),
+    names_to = "variable",
+    values_to = "percent_missing"
+  ) |>
+  print(n = Inf)
+
+# 12. Save final dataset -----
 
 arrow::write_feather(immigration_data, paste0(output_dir, "/immigration_defendant_level.feather"))
 
 # TODO:
-## Stephanie's suggestions:
 
-# Reshape to include instruments?
-# Cahnge CASE_ID name so it's not ambiguos
-
-## Verify merges worked correctly. There seems to be an observation missmatch. Also check rows at the participant vs case level.
 ## Include cleaning from table_gs for various variables for easier analysis (e.g., judge name and type instead of the code)
-## Include data checking code
-
-
-# pointblank::scan_data(palmerpenguins::penguins)
 
