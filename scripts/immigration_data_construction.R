@@ -6,7 +6,7 @@ library(tidylog)
 library(arrow)
 library(purrr)
 library(fs)
-# install.packages("validate")
+install.packages("validate")
 library(validate) # For data checking code
 
 # Setup directories
@@ -24,9 +24,9 @@ fs::dir_create(output_dir)
 
 ## Data checking helper - stop if any rules are broken
 
-confront_stop <- function(data, rules) { # rules = vector of rules create with validate::validator()
+confront_stop <- function(data, rules) { # rules = vector of rules created with validate::validator()
 
-  validation <- confront(immigration_data, rules) #
+  validation <- confront(immigration_data, rules) 
   s <- summary(validation) # Keep the summary of the validation
 
   if (any(s$fails > 0 | s$error > 0)) { # If any rules are broken and/or have errors, the code will stop and print a message that might be helpful for debugging
@@ -35,7 +35,7 @@ confront_stop <- function(data, rules) { # rules = vector of rules create with v
     msg <- paste0(
       "Validation failed on ", nrow(broken), " rule(s):\n",
       paste0(
-        " - ", broken$name, ": ", # Includes the name of the rulke - make sure to include a name when creating the rules
+        " - ", broken$name, ": ", # Includes the name of the rule - make sure to include a name when creating the rules
         broken$expression, " failed, ", # Shows the rule that was broken
         broken$error, " errors while validating" # Shows if there were any errors while validating
         ,
