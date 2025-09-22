@@ -7,6 +7,7 @@ library(arrow)
 library(purrr)
 library(fs)
 install.packages("validate")
+install.packages("pointblank")
 library(validate) # For data checking code
 
 # Setup directories
@@ -163,6 +164,33 @@ safe_join <- function(df1, df2, by_vars, clean_keys = TRUE) {
 
   out
 }
+
+## Check column types
+
+check_dates_pb <- function(df, cols = tidyselect::ends_with("_DATE"), accept_datetime = FALSE) {
+  # resolve the columns to check
+  date_cols <- df %>% select({{ cols }}) %>% names()
+  if (!length(date_cols)) return(invisible(TRUE))
+  
+  types_tbl <- pointblank::scan_data(df) %>%
+    select(col_name, col_type)
+  
+  # allowed types
+  ok_types <- if (accept_datetime) c("date", "datetime") else "date"
+  
+  bad <- types_tbl %>%
+    filter(col_name %in% date_cols, !(col_type %in% ok_types)) %>%
+    pull(col_name)
+  
+  if (length(bad) == 1) {
+    stop(paste0(bad, " is not a Date."))
+  } else if (length(bad) > 1) {
+    stop(paste0("These columns are not Dates: ", paste(bad, collapse = ", "), "."))
+  }
+  
+  invisible(TRUE)
+}
+
 
 # 0.1 Get immigration related cases
 
@@ -878,35 +906,7 @@ confront_stop(immigration_data, rules)
 rm(list = setdiff(ls(), c("immigration_data", "mig_cases", "input_dir", "output_dir", "confront_stop", "clean_missings", "read_and_subset", "safe_join"))) # Keeping only what's needed
 gc()
 
-# 10. Final cleaning (Lookup tables)-----------
-
-## 10.1 UNIT
-
-table_gs_unit <- read_feather(file.path(input_dir, "table_gs_unit.feather")) |>
-  mutate(
-    UNIT_ID = if_else(is.na(District) | is.na(Code), # Create unique UNIT ID (District+Code)
-      NA_character_, str_c(District, Code)
-    )
-  ) |>
-  select(UNIT_ID, UNIT = Description)
-
-immigration_data <-
-  immigration_data |>
-  mutate(
-    UNIT_ID = if_else(is.na(DISTRICT) | is.na(UNIT), # Create unique UNIT ID (District+Code) to match the lookup table
-      NA_character_, str_c(DISTRICT, UNIT)
-    )
-  ) |>
-  rename(UNIT_CODE = UNIT)
-
-join_by <- c("UNIT_ID")
-
-immigration_data <-
-  safe_join(immigration_data, table_gs_unit, join_by) |>
-  mutate(UNIT = if_else(is.na(UNIT), UNIT_CODE, UNIT)) # If UNIT is missing, replace with the code
-
-
-# 11. Reviewing missingness  -------
+# 10. Reviewing missingness  -------
 
 missing_summary <- immigration_data |>
   summarise(across(
