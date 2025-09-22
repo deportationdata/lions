@@ -7,7 +7,7 @@ library(arrow)
 library(purrr)
 library(fs)
 install.packages("validate")
-install.packages("pointblank")
+#install.packages("pointblank")
 library(validate) # For data checking code
 
 # Setup directories
