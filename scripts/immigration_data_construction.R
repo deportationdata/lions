@@ -6,8 +6,7 @@ library(tidylog)
 library(arrow)
 library(purrr)
 library(fs)
-install.packages("validate")
-#install.packages("pointblank")
+# install.packages("validate")
 library(validate) # For data checking code
 
 # Setup directories
@@ -18,7 +17,7 @@ output_dir <- "outputs/mig_LIONS"
 # For local tests
 
 # input_dir <- "~/Library/CloudStorage/Box-Box/deportationdata/_processing/intermediate/EOUSA/library/lions_data"
-# output_dir <- "~/Dropbox/DDP/Tests"
+output_dir <- "~/Dropbox/DDP/Tests"
 fs::dir_create(output_dir)
 
 # 0.0 Helpers
@@ -167,27 +166,33 @@ safe_join <- function(df1, df2, by_vars, clean_keys = TRUE) {
 
 ## Check column types
 
-check_dates_pb <- function(df, cols = tidyselect::ends_with("_DATE"), accept_datetime = FALSE) {
-  # resolve the columns to check
-  date_cols <- df %>% select({{ cols }}) %>% names()
-  if (!length(date_cols)) return(invisible(TRUE))
-  
-  types_tbl <- pointblank::scan_data(df) %>%
-    select(col_name, col_type)
-  
-  # allowed types
-  ok_types <- if (accept_datetime) c("date", "datetime") else "date"
-  
-  bad <- types_tbl %>%
-    filter(col_name %in% date_cols, !(col_type %in% ok_types)) %>%
+check_col_types <- function(df, expected_types) {
+  # Expected_types = named vector of expected types, e.g., c(col1 = "character", col2 = "numeric")
+  expected_types <-
+    enframe(expected_types, name = "col_name", value = "exp_type")
+
+  # Pulling actual column types to compare
+  actual_types <-
+    df |>
+    summarise(across(everything(), ~ class(.x)[1])) |> # get primary class per column
+    pivot_longer(everything(), names_to = "col_name", values_to = "act_type")
+
+  # Identifying discrepancies
+  bad <-
+    expected_types |>
+    inner_join(actual_types, by = "col_name") |>
+    filter(exp_type != act_type) |>
     pull(col_name)
-  
+
+  # Error message to facilitate debugging
   if (length(bad) == 1) {
-    stop(paste0(bad, " is not a Date."))
+    stop(paste0(bad, " is not the correct type."))
   } else if (length(bad) > 1) {
-    stop(paste0("These columns are not Dates: ", paste(bad, collapse = ", "), "."))
+    stop(paste0("These columns are not the correct type: ", paste(bad, collapse = ", "), "."))
+  } else {
+    message("All column types are as expected.")
   }
-  
+
   invisible(TRUE)
 }
 
@@ -236,7 +241,7 @@ for (i in seq_along(participant_paths)) {
 
   df <- df |>
     mutate(
-      CASE_ID = paste0(.data[["DISTRICT"]], .data[["CASEID"]]),  # Creating CASE_ID for case
+      CASE_ID = paste0(.data[["DISTRICT"]], .data[["CASEID"]]), # Creating CASE_ID for case
       PARTICIPANT_ID = paste0(.data[["DISTRICT"]], .data[["CASEID"]], .data[["ID"]]) # Creating CASE_ID for participant
     ) |>
     select(PARTICIPANT_ID, CASE_ID, everything()) |>
@@ -249,7 +254,7 @@ for (i in seq_along(participant_paths)) {
 }
 
 # Combine into one dataframe
-  
+
 immigration_data <- bind_rows(dfs, .id = "source_file")
 
 ## 1.4 Renaming and filtering for defendants
@@ -266,7 +271,7 @@ immigration_data <-
 
 ## 1.5 Cleaning missingess
 
-immigration_data <- immigration_data |> 
+immigration_data <- immigration_data |>
   mutate(across(everything(), clean_missings))
 
 ## Checking the binding
@@ -400,7 +405,7 @@ immigration_data <- safe_join(immigration_data, gs_case, join_by)
 
 # Cleaning missingess
 
-immigration_data <- immigration_data |> 
+immigration_data <- immigration_data |>
   mutate(across(everything(), clean_missings))
 
 # Set of rules to validate
@@ -453,7 +458,7 @@ immigration_data <- safe_join(immigration_data, gs_sentence, join_by)
 ## Checking the merge
 
 # Cleaning missingess
-immigration_data <- immigration_data |> 
+immigration_data <- immigration_data |>
   mutate(across(everything(), clean_missings))
 
 # Set of rules to validate
@@ -500,7 +505,7 @@ immigration_data <-
 
 ## Checking the merge
 # Cleaning missingess
-immigration_data <- immigration_data |> 
+immigration_data <- immigration_data |>
   mutate(across(everything(), clean_missings))
 
 # Set of rules to validate
@@ -616,7 +621,7 @@ immigration_data <- safe_join(immigration_data, gs_count, join_by)
 
 ## Checking the merge
 # Cleaning missingess
-immigration_data <- immigration_data |> 
+immigration_data <- immigration_data |>
   mutate(across(everything(), clean_missings))
 
 # Set of rules to validate
@@ -671,7 +676,7 @@ immigration_data <-
 
 ## Checking the merge
 # Cleaning missingess
-immigration_data <- immigration_data |> 
+immigration_data <- immigration_data |>
   mutate(across(everything(), clean_missings))
 
 # Set of rules to validate
@@ -756,7 +761,7 @@ immigration_data <-
 
 ### Checking the merge
 ### Cleaning missingess
-immigration_data <- immigration_data |> 
+immigration_data <- immigration_data |>
   mutate(across(everything(), clean_missings))
 
 ### Set of rules to validate
@@ -884,7 +889,7 @@ immigration_data <- safe_join(immigration_data, gs_court_judge, join_by)
 
 ### Checking the merge
 ### Cleaning missingess
-immigration_data <- immigration_data |> 
+immigration_data <- immigration_data |>
   mutate(across(everything(), clean_missings))
 
 ### Set of rules to validate
@@ -919,6 +924,19 @@ missing_summary <- immigration_data |>
     values_to = "percent_missing"
   ) |>
   print(n = Inf)
+
+# 11. Reviewing column types -------
+
+expected_types <- c( # Defining expected types. Allows flexibility in case a different column type is needed (not only Date)
+  SYS_INIT_DATE = "Date",
+  OFFENSE_FROM = "Date",
+  OFFENSE_TO = "Date",
+  CLOSE_DATE = "Date",
+  SENT_DATE = "Date",
+  DISP_DATE = "Date"
+)
+
+check_col_types(immigration_data, expected_types) # Run function to check column types
 
 # 12. Save final dataset -----
 
