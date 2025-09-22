@@ -164,39 +164,6 @@ safe_join <- function(df1, df2, by_vars, clean_keys = TRUE) {
   out
 }
 
-## Check column types
-
-check_col_types <- function(df, expected_types) {
-  # Expected_types = named vector of expected types, e.g., c(col1 = "character", col2 = "numeric")
-  expected_types <-
-    enframe(expected_types, name = "col_name", value = "exp_type")
-
-  # Pulling actual column types to compare
-  actual_types <-
-    df |>
-    summarise(across(everything(), ~ class(.x)[1])) |> # get primary class per column
-    pivot_longer(everything(), names_to = "col_name", values_to = "act_type")
-
-  # Identifying discrepancies
-  bad <-
-    expected_types |>
-    inner_join(actual_types, by = "col_name") |>
-    filter(exp_type != act_type) |>
-    pull(col_name)
-
-  # Error message to facilitate debugging
-  if (length(bad) == 1) {
-    stop(paste0(bad, " is not the correct type."))
-  } else if (length(bad) > 1) {
-    stop(paste0("These columns are not the correct type: ", paste(bad, collapse = ", "), "."))
-  } else {
-    message("All column types are as expected.")
-  }
-
-  invisible(TRUE)
-}
-
-
 # 0.1 Get immigration related cases
 
 mig_cases <- arrow::read_feather(paste0(output_dir, "/immigration_cases.feather"))
@@ -936,7 +903,34 @@ expected_types <- c( # Defining expected types. Allows flexibility in case a dif
   DISP_DATE = "Date"
 )
 
-check_col_types(immigration_data, expected_types) # Run function to check column types
+## Check column types
+
+  # Expected_types = named vector of expected types, e.g., c(col1 = "character", col2 = "numeric")
+  expected_types <-
+    enframe(expected_types, name = "col_name", value = "exp_type")
+  
+  # Pulling actual column types to compare
+  actual_types <-
+    immigration_data |>
+    summarise(across(everything(), ~ class(.x)[1])) |> # get primary class per column
+    pivot_longer(everything(), names_to = "col_name", values_to = "act_type")
+  
+  # Identifying discrepancies
+  bad <-
+    expected_types |>
+    inner_join(actual_types, by = "col_name") |>
+    filter(exp_type != act_type) |>
+    pull(col_name)
+  
+  # Error message to facilitate debugging
+  if (length(bad) == 1) {
+    stop(paste0(bad, " is not the correct type."))
+  } else if (length(bad) > 1) {
+    stop(paste0("These columns are not the correct type: ", paste(bad, collapse = ", "), "."))
+  } else {
+    message("All column types are as expected.")
+  }
+
 
 # 12. Save final dataset -----
 
