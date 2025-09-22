@@ -26,7 +26,7 @@ fs::dir_create(output_dir)
 
 confront_stop <- function(data, rules) { # rules = vector of rules created with validate::validator()
 
-  validation <- confront(immigration_data, rules) 
+  validation <- confront(immigration_data, rules)
   s <- summary(validation) # Keep the summary of the validation
 
   if (any(s$fails > 0 | s$error > 0)) { # If any rules are broken and/or have errors, the code will stop and print a message that might be helpful for debugging
@@ -49,19 +49,15 @@ confront_stop <- function(data, rules) { # rules = vector of rules created with 
 
 ## Clean missings
 
-clean_missings <- function(data) {
-  data |>
-    mutate(across(everything(), ~ {
-      x <- .
-      # Convert to character to test NAs safely, then restore class if needed
-      # 1) Trim whitespace; 2) blank -> NA; 3) common tokens -> NA
-      if (is.character(x)) {
-        x <- str_trim(x)
-        x[x == ""] <- NA_character_
-        x[tolower(x) %in% c("na", "n/a", "null", ".")] <- NA_character_
-      }
-      x
-    }))
+clean_missings <- function(x) {
+  # To clean character variables (vectors)
+  # 1) Trim whitespace; 2) blank -> NA; 3) common tokens -> NA
+  if (is.character(x)) {
+    x <- str_trim(x)
+    x[x == ""] <- NA_character_
+    x[tolower(x) %in% c("na", "n/a", "null", ".")] <- NA_character_
+  }
+  x
 }
 
 ## Safely join datasets
@@ -174,35 +170,9 @@ mig_cases <- arrow::read_feather(paste0(output_dir, "/immigration_cases.feather"
 
 # 1. Gs_participant  -------
 
-## 1.0 Function to read in feather files, create CASE_ID, select only specified variables AND SUBSET for immigration related cases and after 1996
-
-read_filter_subset <- function(file_path, district_col, caseid_col, partid_col, vars) {
-  df <- arrow::read_feather(file_path) # Reading dataset
-
-  # Ensure the specified columns to subset exist
-  if (!all(c(district_col, caseid_col) %in% colnames(df))) {
-    stop("Specified columns do not exist in the data frame")
-  }
-
-  df <- df |>
-    mutate(CASE_ID = paste0(.data[[district_col]], .data[[caseid_col]])) |> # Creating CASE_ID for case
-    mutate(PARTICIPANT_ID = paste0(.data[[district_col]], .data[[caseid_col]], .data[[partid_col]])) |> # Creating CASE_ID for participant
-    select(PARTICIPANT_ID, CASE_ID, everything()) |>
-    mutate(SYS_INIT_DATE = as.Date(SYS_INIT_DATE, format = "%d-%b-%Y")) |> # Transforming date to correct format
-    filter(
-      !is.na(SYS_INIT_DATE),
-      SYS_INIT_DATE >= as.Date("1996-01-01")
-    ) |> # Filter for cases after 1996
-    filter(CASE_ID %in% pull(mig_cases, CASE_ID)) |> # Filter for migration related cases
-    select(all_of(vars)) # Select variables
-
-  return(df)
-}
-
 # 1.1 List all feather files that start with "gs_participant_"
 
 participant_paths <- list.files(input_dir, pattern = "gs_participant_.*\\.feather$", full.names = TRUE)
-# participant_paths <- participant_paths[1:2] # For testing, only first five files
 
 # 1.2 Variables to subset
 gs_participant_vars <- c(
@@ -221,11 +191,37 @@ gs_participant_vars <- c(
   "HOME_ZIPCODE"
 )
 
-# 1.3 Map reading, filtering and subseting function over all participants tables
+## 1.3 Loop to read in feather files, create CASE_ID, select only specified variables AND SUBSET for immigration related cases and after 1996
 
-dfs <- map(participant_paths, ~ read_filter_subset(.x, district_col = "DISTRICT", caseid_col = "CASEID", partid_col = "ID", vars = gs_participant_vars))
+dfs <- vector("list", length(participant_paths)) # Vector to collect all dataframes to bind later
 
-# combine into one tibble
+for (i in seq_along(participant_paths)) {
+  path <- participant_paths[i]
+  message("Processing: ", basename(path))
+
+  df <- arrow::read_feather(path)
+
+  # Ensure required columns exist, else stop
+  if (!all(c("DISTRICT", "CASEID", "ID") %in% colnames(df))) {
+    stop("File ", basename(path), " is missing required columns (DISTRICT, CASEID, ID)")
+  }
+
+  df <- df |>
+    mutate(
+      CASE_ID = paste0(.data[["DISTRICT"]], .data[["CASEID"]]),  # Creating CASE_ID for case
+      PARTICIPANT_ID = paste0(.data[["DISTRICT"]], .data[["CASEID"]], .data[["ID"]]) # Creating CASE_ID for participant
+    ) |>
+    select(PARTICIPANT_ID, CASE_ID, everything()) |>
+    mutate(SYS_INIT_DATE = as.Date(SYS_INIT_DATE, format = "%d-%b-%Y")) |> # Converting to date format
+    filter(!is.na(SYS_INIT_DATE), SYS_INIT_DATE >= as.Date("1996-01-01")) |> # Filter for cases after 1996
+    filter(CASE_ID %in% pull(mig_cases, CASE_ID)) |> # Filter for migration related cases
+    select(all_of(gs_participant_vars)) # Select variables
+
+  dfs[[i]] <- df
+}
+
+# Combine into one dataframe
+  
 immigration_data <- bind_rows(dfs, .id = "source_file")
 
 ## 1.4 Renaming and filtering for defendants
@@ -242,7 +238,8 @@ immigration_data <-
 
 ## 1.5 Cleaning missingess
 
-immigration_data <- clean_missings(immigration_data)
+immigration_data <- immigration_data |> 
+  mutate(across(everything(), clean_missings))
 
 ## Checking the binding
 # Set of rules to validate
@@ -375,7 +372,8 @@ immigration_data <- safe_join(immigration_data, gs_case, join_by)
 
 # Cleaning missingess
 
-immigration_data <- clean_missings(immigration_data)
+immigration_data <- immigration_data |> 
+  mutate(across(everything(), clean_missings))
 
 # Set of rules to validate
 rules <- validator(
@@ -386,8 +384,6 @@ rules <- validator(
   CASE_TYPE_all_missing = mean(is.na(CASE_TYPE)) * 100 < 100, # CASE_TYPE should not be all missing
   OFFENSE_FROM_all_missing = mean(is.na(OFFENSE_FROM)) * 100 < 100, # OFFENSE_FROM should not be all missing
   CLOSE_DATE_all_missing = mean(is.na(CLOSE_DATE)) * 100 < 100, # CLOSE_DATE should not be all missing
-  date_discrepancy = in_range(immigration_data$CLOSE_DATE, min = as.Date("1996-01-01"), max = today()),
-  # No records before 1996 and not in the future to avoid potential date typos or errors
   non_unique_rows = is_unique(CASE_ID, PARTICIPANT_ID), # CASE_ID and PARTICIPANT_ID should uniquely identify each row
   n_participants_discrepancy = N_PARTICIPANTS == do_by(PARTICIPANT_ID, by = CASE_ID, fun = function(x) length(unique(x))) # Verify dataset is at participant-level - No more rows than participants
 )
@@ -429,7 +425,8 @@ immigration_data <- safe_join(immigration_data, gs_sentence, join_by)
 ## Checking the merge
 
 # Cleaning missingess
-immigration_data <- clean_missings(immigration_data)
+immigration_data <- immigration_data |> 
+  mutate(across(everything(), clean_missings))
 
 # Set of rules to validate
 rules <- validator(
@@ -475,8 +472,8 @@ immigration_data <-
 
 ## Checking the merge
 # Cleaning missingess
-immigration_data <-
-  clean_missings(immigration_data)
+immigration_data <- immigration_data |> 
+  mutate(across(everything(), clean_missings))
 
 # Set of rules to validate
 rules <-
@@ -591,7 +588,8 @@ immigration_data <- safe_join(immigration_data, gs_count, join_by)
 
 ## Checking the merge
 # Cleaning missingess
-immigration_data <- clean_missings(immigration_data)
+immigration_data <- immigration_data |> 
+  mutate(across(everything(), clean_missings))
 
 # Set of rules to validate
 rules <- validator(
@@ -645,8 +643,8 @@ immigration_data <-
 
 ## Checking the merge
 # Cleaning missingess
-immigration_data <-
-  clean_missings(immigration_data)
+immigration_data <- immigration_data |> 
+  mutate(across(everything(), clean_missings))
 
 # Set of rules to validate
 rules <-
@@ -730,8 +728,8 @@ immigration_data <-
 
 ### Checking the merge
 ### Cleaning missingess
-immigration_data <-
-  clean_missings(immigration_data)
+immigration_data <- immigration_data |> 
+  mutate(across(everything(), clean_missings))
 
 ### Set of rules to validate
 rules <-
@@ -858,8 +856,8 @@ immigration_data <- safe_join(immigration_data, gs_court_judge, join_by)
 
 ### Checking the merge
 ### Cleaning missingess
-immigration_data <-
-  clean_missings(immigration_data)
+immigration_data <- immigration_data |> 
+  mutate(across(everything(), clean_missings))
 
 ### Set of rules to validate
 rules <-
