@@ -107,11 +107,21 @@ check_col_types <- function(df, types_str, date_cols = character()) {
 
 clean_missings <- function(x) {
   # To clean character variables (vectors)
-  # 1) Trim whitespace; 2) blank -> NA; 3) common tokens -> NA
   if (is.character(x)) {
-    x <- str_trim(x)
+    # Some tables were creating errors - normalize encoding to valid UTF-8 (replace bad bytes with "?")
+   
+    x <- iconv(x, from = "", to = "UTF-8", sub = "?")
+    
+    # Trim whitespace safely
+    x <- stringr::str_trim(x)
+    
+    # Empty -> NA
     x[x == ""] <- NA_character_
-    x[tolower(x) %in% c("na", "n/a", "null", ".")] <- NA_character_
+    
+    # Transfor common tokens (case-insensitive) to NA
+    
+    lx <- tolower(x) #    After iconv to UTF-8, tolower() won't error.
+    x[lx %in% c("na", "n/a", "null", ".")] <- NA_character_
   }
   x
 }
