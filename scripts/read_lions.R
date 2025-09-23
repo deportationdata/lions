@@ -104,7 +104,6 @@ check_col_types <- function(df, types_str, date_cols = character()) {
 }
 
 ## Function to clean missingness of read files
-## Clean missings
 
 clean_missings <- function(x) {
   # To clean character variables (vectors)
@@ -223,9 +222,15 @@ walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
           )
 
         # Clean missingness in character
-        df <-
-          df |>
-          mutate(across(everything(), clean_missings))
+        df <- tryCatch(
+          {
+            df |> mutate(across(everything(), clean_missings))
+          },
+          error = function(e) {
+            message("↩︎ Skipping clean_missings (leaving df unchanged): ", conditionMessage(e))
+            df  # Return original df so the pipeline continues
+          }
+        )
 
         # Convert date columns to Date type
         if (length(date_cols)) {
