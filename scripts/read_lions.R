@@ -118,7 +118,7 @@ clean_missings <- function(x) {
     # Empty -> NA
     x[x == ""] <- NA_character_
     
-    # Transfor common tokens (case-insensitive) to NA
+    # Transform common tokens (case-insensitive) to NA
     
     lx <- tolower(x) #    After iconv to UTF-8, tolower() won't error.
     x[lx %in% c("na", "n/a", "null", ".")] <- NA_character_
