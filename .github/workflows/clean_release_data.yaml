@@ -9,7 +9,8 @@ on:
       - 'scripts/read_lions_D27.R'
       - 'scripts/read_lions_D28.R'
       - 'scripts/deidentifying.R'
-    
+    schedule:
+      - cron: '0 14 * * 1'   # Mondays 07:00 PT
 
 permissions:
   contents: write
