@@ -10,6 +10,9 @@ library(tibble)
 library(fs) # To suppress messages
 library(tools) # for file_path_sans_ext()
 
+# 1. Helpers
+
+## Function to parse a chunk of text corresponding to a table layout 
 parse_table_chunk <- function(chunk, disk) { # Each disk folder (currently 28) has a README.txt file and other gs_*.txt files (27 is an exception***)
   header <- chunk[1]
   table <- str_extract(header, "^GS_[A-Z0-9_]+")
@@ -49,8 +52,72 @@ parse_table_chunk <- function(chunk, disk) { # Each disk folder (currently 28) h
     )
 }
 
+## Function to check column types after reading 
+check_col_types <- function(df, types_str, date_cols = character()) {
+  # expected codes per column, aligned to df's columns
+  exp_code <- strsplit(types_str, "", fixed = TRUE)[[1]]
+  if (length(exp_code) != ncol(df)) {
+    stop("Column count mismatch: layout has ", length(exp_code),
+         " columns but data has ", ncol(df), ".")
+  }
+  names(exp_code) <- names(df)
+  
+  # Map codes to expected R classes; dates override to "Date"
+  code_to_class <- c(
+    c = "character",
+    n = "numeric",
+    i = "integer",
+    d = "numeric",   # treat double as numeric
+    l = "logical",
+    D = "Date",
+    T = "POSIXct"
+  )
+  # Start from codes, then force expected "Date" for date columns
+  exp_class <- unname(code_to_class[exp_code])
+  names(exp_class) <- names(df)
+  exp_class[names(df) %in% date_cols] <- "Date"
+  
+  # Actual primary class per column (normalize a few common cases)
+  act_class <- vapply(df, function(x) {
+    if (is.factor(x)) "character"
+    else if (inherits(x, "integer64")) "numeric"
+    else class(x)[1]
+  }, character(1))
+  
+  # Allow integers where "numeric" is expected
+  bad <- names(df)[mapply(function(exp, act) {
+    if (is.na(exp)) TRUE                             # unknown expected code -> fail
+    else if (exp == "numeric") !(act %in% c("numeric", "integer"))
+    else exp != act
+  }, exp_class, act_class)]
+  
+  if (length(bad) == 1) {
+    stop(paste0(bad, " is not the correct type."))
+  } else if (length(bad) > 1) {
+    stop(paste0("These columns are not the correct type: ",
+                paste(bad, collapse = ", "), "."))
+  } else {
+    message("All column types are the expected type.")
+  }
+  
+  invisible(TRUE)
+}
 
-# grab the file names from a README block
+## Function to clean missingness of read files
+## Clean missings
+
+clean_missings <- function(x) {
+  # To clean character variables (vectors)
+  # 1) Trim whitespace; 2) blank -> NA; 3) common tokens -> NA
+  if (is.character(x)) {
+    x <- str_trim(x)
+    x[x == ""] <- NA_character_
+    x[tolower(x) %in% c("na", "n/a", "null", ".")] <- NA_character_
+  }
+  x
+}
+
+## Function to extract the file names from a README block
 extract_files <- \(txt, disk) {
   tibble(line = txt) |>
     # filter to lines that have .txt in them
@@ -62,6 +129,7 @@ extract_files <- \(txt, disk) {
     )
 }
 
+## Function to derive table name from file name
 derive_table <- \(f) {
   paste0(
     "GS_",
@@ -73,26 +141,25 @@ derive_table <- \(f) {
   )
 }
 
-# read in all of the README files in any DISC** folder
+## Function to read in all of the README files in any DISC** folder
 readmes <-
   dir(
-    # "~/Library/CloudStorage/Box-Box/deportationdata/data/EOUSA/LIONS", # Test
     "inputs",
     pattern = "README\\.txt$",
-    recursive = TRUE, # looks in subdirectories too
-    full.names = TRUE # full file paths instead of just filenames
+    recursive = TRUE, # Looks in subdirectories too (because we have previously zipped folders)
+    full.names = TRUE # Full file paths instead of just filenames
   ) |>
-  # set the name of the vector to make mapping easier
-  # set to the name of the directory
+  # Set the name of the vector to make mapping easier
+  # Set to the name of the directory
   set_names(\(p) basename(dirname(p))) |> # For each file path p, dirname(p) returns the directory path containing the file
   map(readLines, warn = FALSE)
 
-# get the mapping between files and tables; some tables are in more than one file
+## Getting the mapping between files and tables; some tables are in more than one file
 files_mapping <-
   imap_dfr(readmes, extract_files) |>
   mutate(table = map_chr(file, derive_table))
 
-# get the layout for each table which is used in the fwf read in command
+# Getting the layout for each table which is used in the fwf read in command
 layouts <-
   map2_dfr(readmes, names(readmes), \(lines, disk) {
     # start of layout declaration is the table name starting wiht GS_
@@ -104,10 +171,10 @@ layouts <-
   full_join(files_mapping) |>
   mutate(is_lookup_table = is.na(col_names))
 
-# remove lookup tables which have a different format
+# Removing lookup tables which have a different format
 layouts_data <- layouts |> filter(!is_lookup_table) # Dropping disk 28
 
-# get layouts for lookup tables only
+# Getting layouts for lookup tables only
 layouts_lookup <-
   layouts |>
   # global_LIONS is not a lookup table nor a data table; ignore completely
@@ -116,8 +183,7 @@ layouts_lookup <-
 
 # Create a list of file paths for each disk and file
 layout_by_file <- layouts_data |>
-  group_by(file_path = file.path("inputs/unzipped", disk, file)) |>
-  # group_by(file_path = file.path("~/Library/CloudStorage/Box-Box/deportationdata/data/EOUSA/LIONS", disk, file)) |> # Test
+  group_by(file_path = file.path("inputs/unzipped", disk, file)) |> 
   summarise(
     fwf = list(fwf_positions(begin, end, col_names)),
     col_types = paste0(replace(col_type, col_type %in% c("D"), "c"), collapse = ""), # Compact readr type string - If these are Dates, we will take them as character and process later (they have Oracle-style DD-MON-YYYY format)
@@ -126,14 +192,12 @@ layout_by_file <- layouts_data |>
   )
 
 # Creating table to walk
-
 layout_tbl <- split(layout_by_file, layout_by_file$file_path)
 # layout_tbl <- layout_tbl[1:2]# Test
 
 # Creating directory to save feather files
 
 output_dir <- "outputs"
-# output_dir <- "~/Dropbox/DDP/Tests" # Test
 
 fs::dir_create(output_dir)
 
@@ -165,33 +229,26 @@ walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
         # Clean missingness in character
         df <-
           df |>
-          mutate(across(everything(), ~ {
-            x <- .
-            # Convert to character to test NAs safely, then restore class if needed
-            if (is.character(x)) {
-              x <- str_trim(x) # Trim whitespace
-              x[x == ""] <- NA_character_ # Blank -> NA
-              x[tolower(x) %in% c("na", "n/a", "null", ".")] <- NA_character_ # Common tokens -> NA
-            }
-            x
-          }))
+          mutate(across(everything(), clean_missings))
 
         # Convert date columns to Date type
         if (length(date_cols)) {
           df <- df |>
             mutate(across(
               all_of(date_cols),
-              ~ as.Date(., format = "%d-%b-%Y")
+              ~ as.Date(., format = "%d-%b-%Y") 
             ))
         }
-
+        # Check column types
+        check_col_types(df, types_str, date_cols)
+        
         # Save as feather file
         write_feather(df, feather_path)
 
         message("✔ Saved: ", feather_path)
       },
       error = function(e) {
-        message("✘ Error processing: ", path, " — ", e$message)
+        stop("✘ Error processing: ", path, " — ", e$message)
       }
     )
   } else {
