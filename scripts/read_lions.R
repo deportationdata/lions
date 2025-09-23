@@ -214,12 +214,8 @@ walk2(layout_tbl, names(layout_tbl), function(tbl, path) {
         # Extract the base name to save it
         base_name <- file_path_sans_ext(basename(path))
         feather_path <- file.path(output_dir, paste0(base_name, ".feather"))
-
-        # if (file.exists(feather_path)) { # Including this skip to face crashes while running the code - If it crashes, it will not try to read files that were already read
-        #  message("Skipping (already exists): ", base_name)
-        #  return(invisible(NULL))
-        # }
-
+  
+        # Reading .txt table
         df <-
           read_fwf(path,
             col_positions = layout,
